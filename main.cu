@@ -294,17 +294,6 @@ __global__ void weight_update_kernel(float* errors, float* last_activations, flo
 	weights[i] += (-learning_rate * errors[threadIdx.x] * last_activations[blockIdx.x]);
 }
 
-class activation
-{
-	void (*f)(float*, float*, size_t);
-	void (*d)(float*, float*, size_t);
-	activation(p_f, f_d):
-	f{p_f}, d{p_d}
-	{} 
-};
-
-activation relua(relu, relu_derivative);
-
 class layer
 {
 public:
@@ -465,16 +454,17 @@ int main()
 	// mnist_model.learning_rate = 0.025f;
 	// mnist_model.train(train_data, 5);
 
-	// mnist_model.test(test_data);
-
+	
 	return 0;
 }
-
-	// for (int i = 0; i < 30; ++i)
-	// {
-	// 	mnist_model.forward_pass(train_data[i].image);
-	// 	// std::cout << mnist_model.layers.back().activations;
-	// 	float* result = mnist_model.layers.back().activations.read();
-	// 	int prediction = std::max_element(result, result + mnist_model.layers.back().units) - result;
-	// 	std::cout << prediction << ' ';
-	// }
+// for (int i = 0; i < 3; ++i)
+// {
+// 	mnist_model.forward_pass(train_data[i].image);
+// 	std::cout << mnist_model.layers.front().activations << '\n';
+// 	std::cout << mnist_model.layers[1].activations << '\n';
+// 	std::cout << mnist_model.layers[2].activations << '\n';
+// 	std::cout << mnist_model.layers.back().activations << '\n';
+// 	float* result = mnist_model.layers.back().activations.read();
+// 	int prediction = std::max_element(result, result + mnist_model.layers.back().units) - result;
+// 	std::cout << prediction << ' ';
+// }
