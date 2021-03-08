@@ -184,7 +184,7 @@ __global__ void matTmulvec(float* mat, float* vec, int height, int width, float*
 	}
 }
 
-__global__ void relu(float* input, float* output, size_t size)
+__global__ void relu_kernel(float* input, float* output, size_t size)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < size)
@@ -239,7 +239,7 @@ __global__ void relu_derivative(float* input, float* output, size_t size)
 	}
 }
 
-__global__ void softmax(float* input, float* output, size_t size)
+__global__ void softmax_kernel(float* input, float* output, size_t size)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	float sum = 0;
@@ -296,16 +296,17 @@ __global__ void weight_update_kernel(float* errors, float* last_activations, flo
 
 class activation
 {
+public:
 	void (*f)(float*, float*, size_t);
 	void (*d)(float*, float*, size_t);
-	activation(p_f, f_d):
+	activation(void (*p_f)(float*, float*, size_t), void (*p_d)(float*, float*, size_t)):
 	f{p_f}, d{p_d}
 	{} 
 };
 
-activation relua(relu, relu_derivative);
+activation relu(relu_kernel, relu_derivative);
+activation softmax(softmax_kernel, relu_derivative);
 
-test;
 
 class layer
 {
@@ -316,21 +317,21 @@ public:
 	c_vector pre_activations;
 	c_vector errors;
 	c_matrix weights{1, 1};
-	void (*act_func)(float*, float*, size_t);
-	layer(size_t p_units=16, void (*p_act_func)(float*, float*, size_t)=relu, size_t p_input_length=1):
+	activation act;
+	layer(size_t p_units=16, activation act_p=relu, size_t p_input_length=1):
 	units{p_units}, activations{units + 1}, pre_activations{units}, errors{units},
-	act_func{p_act_func}, input_length{p_input_length}
+	act{act_p}, input_length{p_input_length}
 	{}
 	void forward(float* input)
 	{
 		matmulvec<<<2, 8>>>(weights.d_copy, input, weights.height, weights.width, pre_activations.d_copy);
-		act_func<<<2, 8>>>(pre_activations.d_copy, activations.d_copy, pre_activations.length);
+		act.f<<<2, 8>>>(pre_activations.d_copy, activations.d_copy, pre_activations.length);
 	}
 	void backward(c_matrix& nlw, c_vector& nle)
 	{
 		matTmulvec<<<2, 8>>>(nlw.d_copy, nle.d_copy, nlw.height, nlw.width, errors.d_copy);
 		// sigmoid_derivative<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
-		relu_derivative<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
+		act.d<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
 		elementwisemul<<<2, 8>>>(errors.d_copy, pre_activations.d_copy, errors.d_copy, errors.length);
 	}
 	void set_input_lenght(size_t length)
