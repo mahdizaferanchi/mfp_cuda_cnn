@@ -305,6 +305,8 @@ class activation
 
 activation relua(relu, relu_derivative);
 
+test;
+
 class layer
 {
 public:
