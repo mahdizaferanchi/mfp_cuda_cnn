@@ -6,6 +6,8 @@
 #include <random>
 #include <ctime>
 #include <algorithm>
+#include <chrono>
+
 
 
 class mnist_data_point
@@ -184,7 +186,7 @@ __global__ void matTmulvec(float* mat, float* vec, int height, int width, float*
 	}
 }
 
-__global__ void relu(float* input, float* output, size_t size)
+__global__ void relu_kernel(float* input, float* output, size_t size)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < size)
@@ -198,7 +200,7 @@ __global__ void relu(float* input, float* output, size_t size)
 	}  
 }
 
-__global__ void sigmoid(float* input, float* output, size_t size)
+__global__ void sigmoid_kernel(float* input, float* output, size_t size)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < size)
@@ -239,7 +241,7 @@ __global__ void relu_derivative(float* input, float* output, size_t size)
 	}
 }
 
-__global__ void softmax(float* input, float* output, size_t size)
+__global__ void softmax_kernel(float* input, float* output, size_t size)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	float sum = 0;
@@ -288,11 +290,30 @@ __global__ void cross_entropy(float* input, float* output, size_t size)
 	// int i = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
+__global__ void mean_square_error(float* input, float* output, size_t size)
+{
+	// int i = blockIdx.x * blockDim.x + threadIdx.x;
+}
+
 __global__ void weight_update_kernel(float* errors, float* last_activations, float* weights, float learning_rate)
 {
 	int i = threadIdx.x * gridDim.x + blockIdx.x;
 	weights[i] += (-learning_rate * errors[threadIdx.x] * last_activations[blockIdx.x]);
 }
+
+class activation
+{
+public:
+	void (*f)(float*, float*, size_t);
+	void (*d)(float*, float*, size_t);
+	activation(void (*p_f)(float*, float*, size_t), void (*p_d)(float*, float*, size_t)):
+	f{p_f}, d{p_d}
+	{} 
+};
+
+activation relu(relu_kernel, relu_derivative);
+activation softmax(softmax_kernel, relu_derivative);
+activation sigmoid(sigmoid_kernel, sigmoid_derivative);
 
 class layer
 {
@@ -303,21 +324,20 @@ public:
 	c_vector pre_activations;
 	c_vector errors;
 	c_matrix weights{1, 1};
-	void (*act_func)(float*, float*, size_t);
-	layer(size_t p_units=16, void (*p_act_func)(float*, float*, size_t)=relu, size_t p_input_length=1):
+	activation act;
+	layer(size_t p_units=16, activation act_p=relu, size_t p_input_length=1):
 	units{p_units}, activations{units + 1}, pre_activations{units}, errors{units},
-	act_func{p_act_func}, input_length{p_input_length}
+	act{act_p}, input_length{p_input_length}
 	{}
 	void forward(float* input)
 	{
 		matmulvec<<<2, 8>>>(weights.d_copy, input, weights.height, weights.width, pre_activations.d_copy);
-		act_func<<<2, 8>>>(pre_activations.d_copy, activations.d_copy, pre_activations.length);
+		act.f<<<2, 8>>>(pre_activations.d_copy, activations.d_copy, pre_activations.length);
 	}
 	void backward(c_matrix& nlw, c_vector& nle)
 	{
 		matTmulvec<<<2, 8>>>(nlw.d_copy, nle.d_copy, nlw.height, nlw.width, errors.d_copy);
-		// sigmoid_derivative<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
-		relu_derivative<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
+		act.d<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
 		elementwisemul<<<2, 8>>>(errors.d_copy, pre_activations.d_copy, errors.d_copy, errors.length);
 	}
 	void set_input_lenght(size_t length)
@@ -328,6 +348,32 @@ public:
 
 };
 
+typedef void (*out_err_fptr)(float*, float*, size_t, int);
+
+out_err_fptr get_out_err_func(
+	void (*out_loss)(float*, float*, size_t),
+	void (*out_act)(float*, float*, size_t))
+{
+	if (out_loss == cross_entropy)
+	{
+		if (out_act == softmax_kernel)
+		{
+			return softmax_crossen_error;
+		}else{
+			return nullptr;
+		}
+	}else if (out_loss == mean_square_error){
+		if (out_act == sigmoid_kernel)
+		{
+			return sigmoid_square_error;
+		}else{
+			return nullptr;
+		}
+	}else{
+		return nullptr;
+	}
+}
+
 class model
 {
 public:
@@ -335,14 +381,27 @@ public:
 	float* d_loss{};
 	int* d_correct_label{};
 	void (*loss_func)(float*, float*, size_t);
+	void (*out_err_func)(float*, float*, size_t, int);
+	bool final {false};
 	float learning_rate;
 	float* d_learning_rate;
+
 	model(void (*p_loss_func)(float*, float*, size_t), float p_learning_rate):
 	loss_func{p_loss_func}, learning_rate{p_learning_rate}
 	{
 		cudaMalloc((void**) &d_loss, sizeof(float));
 		cudaMalloc((void**) &d_learning_rate, sizeof(float));
 		cudaMalloc((void**) &d_correct_label, sizeof(int));
+	}
+	bool finalize()
+	{
+		if (get_out_err_func(loss_func, layers.back().act.f))
+		{
+			out_err_func = get_out_err_func(loss_func, layers.back().act.f);
+			final = true;
+			return true;
+		}
+		return false;
 	}
 	void add(layer l)
 	{
@@ -365,8 +424,7 @@ public:
 	}
 	void backprop(int target)
 	{
-		// sigmoid_square_error<<<2, 8>>>(layers.back().activations.d_copy, layers.back().errors.d_copy, layers.back().units, target);
-		softmax_crossen_error<<<2, 8>>>(layers.back().activations.d_copy, layers.back().errors.d_copy, layers.back().units, target);
+		out_err_func<<<2, 8>>>(layers.back().activations.d_copy, layers.back().errors.d_copy, layers.back().units, target);
 		for (std::vector<layer>::iterator l = layers.end() - 2; l != layers.begin(); --l)
 		{
 			l->backward((l + 1)->weights, (l + 1)->errors);
@@ -398,18 +456,26 @@ public:
 	}
 	void train(std::vector<mnist_data_point>& data, int epochs)
 	{
-		for (int epoch = 1; epoch <= epochs; ++epoch)
+		if (finalize())
 		{
-			int num_of_data = data.size();
-			float acc = 0;
-			for (auto dp : data)
+			for (int epoch = 1; epoch <= epochs; ++epoch)
 			{
-				if(single_train(dp))
+				auto tik = std::chrono::high_resolution_clock::now();
+				int num_of_data = data.size();
+				float acc = 0;
+				for (auto dp : data)
 				{
-					acc += 1.0f / num_of_data;
+					if(single_train(dp))
+					{
+						acc += 1.0f / num_of_data;
+					}
 				}
+				auto tok = std::chrono::high_resolution_clock::now();
+				std::chrono::duration<double, std::milli> ms_double = tok - tik;
+				std::cout << "Epoch " << epoch << ": acc = " << acc << " in " << ms_double.count() << "ms.\n"; 
 			}
-			std::cout << "Epoch " << epoch << ": acc = " << acc << '\n'; 
+		}else{
+			std::cout << "Could not finalize model. \n";
 		}
 	}
 	void test(std::vector<mnist_data_point>& data)
@@ -435,7 +501,7 @@ int main()
 	auto test_data = mnist_parse("sample_data/mnist_test.csv");
 	auto train_data = mnist_parse("sample_data/mnist_train_small.csv");
 
-	// model mnist_model(cross_entropy, 0.5f);
+	// model mnist_model(mean_square_error, 0.5f);
 	// mnist_model.add(layer(784));
 	// mnist_model.add(layer(16, sigmoid));
 	// mnist_model.add(layer(16, sigmoid));
@@ -447,24 +513,19 @@ int main()
 	mnist_model.add(layer(16));
 	mnist_model.add(layer(10, softmax));
 
-	mnist_model.train(train_data, 1);
-	mnist_model.test(test_data);
-	// mnist_model.learning_rate = 0.1f;
+	auto tik = std::chrono::high_resolution_clock::now();
+	mnist_model.train(train_data, 3);
+	auto tok = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	std::cout << ms_double.count() << "ms \n";
+	// mnist_model.learning_rate = 0.005f;
 	// mnist_model.train(train_data, 5);
-	// mnist_model.learning_rate = 0.025f;
+	// mnist_model.learning_rate = 0.001f;
 	// mnist_model.train(train_data, 5);
 
-	
+
+	mnist_model.test(test_data);
+
 	return 0;
 }
-// for (int i = 0; i < 3; ++i)
-// {
-// 	mnist_model.forward_pass(train_data[i].image);
-// 	std::cout << mnist_model.layers.front().activations << '\n';
-// 	std::cout << mnist_model.layers[1].activations << '\n';
-// 	std::cout << mnist_model.layers[2].activations << '\n';
-// 	std::cout << mnist_model.layers.back().activations << '\n';
-// 	float* result = mnist_model.layers.back().activations.read();
-// 	int prediction = std::max_element(result, result + mnist_model.layers.back().units) - result;
-// 	std::cout << prediction << ' ';
-// }
+
