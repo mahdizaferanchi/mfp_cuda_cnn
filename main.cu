@@ -6,6 +6,8 @@
 #include <random>
 #include <ctime>
 #include <algorithm>
+#include <chrono>
+
 
 
 class mnist_data_point
@@ -459,6 +461,7 @@ public:
 		{
 			for (int epoch = 1; epoch <= epochs; ++epoch)
 			{
+				auto tik = std::chrono::high_resolution_clock::now();
 				int num_of_data = data.size();
 				float acc = 0;
 				for (auto dp : data)
@@ -468,7 +471,9 @@ public:
 						acc += 1.0f / num_of_data;
 					}
 				}
-				std::cout << "Epoch " << epoch << ": acc = " << acc << '\n'; 
+				auto tok = std::chrono::high_resolution_clock::now();
+				std::chrono::duration<double, std::milli> ms_double = tok - tik;
+				std::cout << "Epoch " << epoch << ": acc = " << acc << " in " << ms_double.count() << "ms.\n"; 
 			}
 		}else{
 			std::cout << "Could not finalize model. \n";
@@ -497,34 +502,30 @@ int main()
 	auto test_data = mnist_parse("sample_data/mnist_test.csv");
 	auto train_data = mnist_parse("sample_data/mnist_train_small.csv");
 
-	model mnist_model(mean_square_error, 0.5f);
-	mnist_model.add(layer(784));
-	mnist_model.add(layer(16, sigmoid));
-	mnist_model.add(layer(16, sigmoid));
-	mnist_model.add(layer(10, sigmoid));
-
-	// model mnist_model(cross_entropy, 0.01f);
+	// model mnist_model(mean_square_error, 0.5f);
 	// mnist_model.add(layer(784));
-	// mnist_model.add(layer(16));
-	// mnist_model.add(layer(16));
-	// mnist_model.add(layer(10, softmax));
+	// mnist_model.add(layer(16, sigmoid));
+	// mnist_model.add(layer(16, sigmoid));
+	// mnist_model.add(layer(10, sigmoid));
 
-	mnist_model.train(train_data, 1);
+	model mnist_model(cross_entropy, 0.01f);
+	mnist_model.add(layer(784));
+	mnist_model.add(layer(16));
+	mnist_model.add(layer(16));
+	mnist_model.add(layer(10, softmax));
+
+	auto tik = std::chrono::high_resolution_clock::now();
+	mnist_model.train(train_data, 3);
+	auto tok = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	std::cout << ms_double.count() << "ms \n";
+	// mnist_model.learning_rate = 0.005f;
+	// mnist_model.train(train_data, 5);
+	// mnist_model.learning_rate = 0.001f;
+	// mnist_model.train(train_data, 5);
+
 	mnist_model.test(test_data);
-	// mnist_model.learning_rate = 0.1f;
-	// mnist_model.train(train_data, 5);
-	// mnist_model.learning_rate = 0.025f;
-	// mnist_model.train(train_data, 5);
-
-	// mnist_model.test(test_data);
 
 	return 0;
 }
-	// for (int i = 0; i < 30; ++i)
-	// {
-	// 	mnist_model.forward_pass(train_data[i].image);
-	// 	std::cout << mnist_model.layers.back().activations;
-	// 	float* result = mnist_model.layers.back().activations.read();
-	// 	int prediction = std::max_element(result, result + mnist_model.layers.back().units) - result;
-	// 	std::cout << prediction << ' ';
-	// }
+
