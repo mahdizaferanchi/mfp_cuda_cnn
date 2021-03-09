@@ -198,7 +198,7 @@ __global__ void relu_kernel(float* input, float* output, size_t size)
 	}  
 }
 
-__global__ void sigmoid(float* input, float* output, size_t size)
+__global__ void sigmoid_kernel(float* input, float* output, size_t size)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < size)
@@ -288,6 +288,11 @@ __global__ void cross_entropy(float* input, float* output, size_t size)
 	// int i = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
+__global__ void mean_square_error(float* input, float* output, size_t size)
+{
+	// int i = blockIdx.x * blockDim.x + threadIdx.x;
+}
+
 __global__ void weight_update_kernel(float* errors, float* last_activations, float* weights, float learning_rate)
 {
 	int i = threadIdx.x * gridDim.x + blockIdx.x;
@@ -306,6 +311,7 @@ public:
 
 activation relu(relu_kernel, relu_derivative);
 activation softmax(softmax_kernel, relu_derivative);
+activation sigmoid(sigmoid_kernel, sigmoid_derivative);
 
 
 class layer
@@ -330,7 +336,6 @@ public:
 	void backward(c_matrix& nlw, c_vector& nle)
 	{
 		matTmulvec<<<2, 8>>>(nlw.d_copy, nle.d_copy, nlw.height, nlw.width, errors.d_copy);
-		// sigmoid_derivative<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
 		act.d<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
 		elementwisemul<<<2, 8>>>(errors.d_copy, pre_activations.d_copy, errors.d_copy, errors.length);
 	}
@@ -342,6 +347,32 @@ public:
 
 };
 
+typedef void (*out_err_fptr)(float*, float*, size_t, int);
+
+out_err_fptr get_out_err_func(
+	void (*out_loss)(float*, float*, size_t),
+	void (*out_act)(float*, float*, size_t))
+{
+	if (out_loss == cross_entropy)
+	{
+		if (out_act == softmax_kernel)
+		{
+			return softmax_crossen_error;
+		}else{
+			return nullptr;
+		}
+	}else if (out_loss == mean_square_error){
+		if (out_act == sigmoid_kernel)
+		{
+			return sigmoid_square_error;
+		}else{
+			return nullptr;
+		}
+	}else{
+		return nullptr;
+	}
+}
+
 class model
 {
 public:
@@ -349,14 +380,27 @@ public:
 	float* d_loss{};
 	int* d_correct_label{};
 	void (*loss_func)(float*, float*, size_t);
+	void (*out_err_func)(float*, float*, size_t, int);
+	bool final {false};
 	float learning_rate;
 	float* d_learning_rate;
+
 	model(void (*p_loss_func)(float*, float*, size_t), float p_learning_rate):
 	loss_func{p_loss_func}, learning_rate{p_learning_rate}
 	{
 		cudaMalloc((void**) &d_loss, sizeof(float));
 		cudaMalloc((void**) &d_learning_rate, sizeof(float));
 		cudaMalloc((void**) &d_correct_label, sizeof(int));
+	}
+	bool finalize()
+	{
+		if (get_out_err_func(loss_func, layers.back().act.f))
+		{
+			out_err_func = get_out_err_func(loss_func, layers.back().act.f);
+			final = true;
+			return true;
+		}
+		return false;
 	}
 	void add(layer l)
 	{
@@ -379,8 +423,7 @@ public:
 	}
 	void backprop(int target)
 	{
-		// sigmoid_square_error<<<2, 8>>>(layers.back().activations.d_copy, layers.back().errors.d_copy, layers.back().units, target);
-		softmax_crossen_error<<<2, 8>>>(layers.back().activations.d_copy, layers.back().errors.d_copy, layers.back().units, target);
+		out_err_func<<<2, 8>>>(layers.back().activations.d_copy, layers.back().errors.d_copy, layers.back().units, target);
 		for (std::vector<layer>::iterator l = layers.end() - 2; l != layers.begin(); --l)
 		{
 			l->backward((l + 1)->weights, (l + 1)->errors);
@@ -412,18 +455,23 @@ public:
 	}
 	void train(std::vector<mnist_data_point>& data, int epochs)
 	{
-		for (int epoch = 1; epoch <= epochs; ++epoch)
+		if (finalize())
 		{
-			int num_of_data = data.size();
-			float acc = 0;
-			for (auto dp : data)
+			for (int epoch = 1; epoch <= epochs; ++epoch)
 			{
-				if(single_train(dp))
+				int num_of_data = data.size();
+				float acc = 0;
+				for (auto dp : data)
 				{
-					acc += 1.0f / num_of_data;
+					if(single_train(dp))
+					{
+						acc += 1.0f / num_of_data;
+					}
 				}
+				std::cout << "Epoch " << epoch << ": acc = " << acc << '\n'; 
 			}
-			std::cout << "Epoch " << epoch << ": acc = " << acc << '\n'; 
+		}else{
+			std::cout << "Could not finalize model. \n";
 		}
 	}
 	void test(std::vector<mnist_data_point>& data)
@@ -449,17 +497,17 @@ int main()
 	auto test_data = mnist_parse("sample_data/mnist_test.csv");
 	auto train_data = mnist_parse("sample_data/mnist_train_small.csv");
 
-	// model mnist_model(cross_entropy, 0.5f);
-	// mnist_model.add(layer(784));
-	// mnist_model.add(layer(16, sigmoid));
-	// mnist_model.add(layer(16, sigmoid));
-	// mnist_model.add(layer(10, sigmoid));
-
-	model mnist_model(cross_entropy, 0.01f);
+	model mnist_model(mean_square_error, 0.5f);
 	mnist_model.add(layer(784));
-	mnist_model.add(layer(16));
-	mnist_model.add(layer(16));
-	mnist_model.add(layer(10, softmax));
+	mnist_model.add(layer(16, sigmoid));
+	mnist_model.add(layer(16, sigmoid));
+	mnist_model.add(layer(10, sigmoid));
+
+	// model mnist_model(cross_entropy, 0.01f);
+	// mnist_model.add(layer(784));
+	// mnist_model.add(layer(16));
+	// mnist_model.add(layer(16));
+	// mnist_model.add(layer(10, softmax));
 
 	mnist_model.train(train_data, 1);
 	mnist_model.test(test_data);
@@ -472,11 +520,10 @@ int main()
 
 	return 0;
 }
-
 	// for (int i = 0; i < 30; ++i)
 	// {
 	// 	mnist_model.forward_pass(train_data[i].image);
-	// 	// std::cout << mnist_model.layers.back().activations;
+	// 	std::cout << mnist_model.layers.back().activations;
 	// 	float* result = mnist_model.layers.back().activations.read();
 	// 	int prediction = std::max_element(result, result + mnist_model.layers.back().units) - result;
 	// 	std::cout << prediction << ' ';
