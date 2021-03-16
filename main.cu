@@ -7,6 +7,7 @@
 #include <ctime>
 #include <algorithm>
 #include <chrono>
+#include <string>
 
 
 
@@ -27,11 +28,43 @@ public:
 		label = std::stoi(nums[0]);
 		for (int i = 0; i < 784; ++i)
 		{
-			image[i] = static_cast<float> (std::stoi(nums[i + 1])) / 256.0;
+			image[i] = static_cast<float> (std::stoi(nums[i + 1])) / 255.0;
 		}
 	}
 };
 
+class mnist_image
+{
+public:
+	float image[784];
+	mnist_image(std::string& str)
+	{
+		std::stringstream line(str);
+		std::string num;
+		std::vector<std::string> nums;
+		while(std::getline(line, num, ','))
+		{
+			nums.push_back(num);
+		}
+		for (int i = 0; i < 784; ++i)
+		{
+			image[i] = static_cast<float> (std::stoi(nums[i + 1])) / 255.0;
+		}
+	}
+};
+
+class mnist_label
+{
+public:
+	int label;
+	mnist_label(std::string& str)
+	{
+		std::stringstream line(str);
+		std::string num;
+		std::getline(line, num, ',');
+		label = std::stoi(num);
+	}
+};
 
 std::vector<mnist_data_point> mnist_parse(const std::string& file_name)
 {
@@ -41,6 +74,32 @@ std::vector<mnist_data_point> mnist_parse(const std::string& file_name)
 	while(std::getline(file, data_point_string))
 	{
 		mnist_data_point p(data_point_string);
+		data_vector.push_back(p);
+	}
+	return data_vector;
+}
+
+std::vector<mnist_image> mnist_parse_image(const std::string& file_name)
+{
+	std::ifstream file(file_name);
+	std::vector<mnist_image> data_vector;
+	std::string data_point_string;
+	while(std::getline(file, data_point_string))
+	{
+		mnist_image p(data_point_string);
+		data_vector.push_back(p);
+	}
+	return data_vector;
+}
+
+std::vector<mnist_label> mnist_parse_label(const std::string& file_name)
+{
+	std::ifstream file(file_name);
+	std::vector<mnist_label> data_vector;
+	std::string data_point_string;
+	while(std::getline(file, data_point_string))
+	{
+		mnist_label p(data_point_string);
 		data_vector.push_back(p);
 	}
 	return data_vector;
@@ -97,6 +156,7 @@ public:
 class c_matrix
 {
 public:
+	size_t pitch;
 	size_t height;
 	size_t width;
 	float* h_copy;
@@ -107,7 +167,7 @@ public:
 		size_t length = height * width;
 		size_t float_size = sizeof(float);
 		h_copy = new float[length];
-		cudaMalloc((void**) &d_copy, float_size * length);
+		cudaMallocPitch((void**) &d_copy, &pitch, float_size * width, height);
 		fill_with_rand(h_copy, length, initial_max);
 		for (int i = 0; i < height; ++i)
 		{
@@ -170,6 +230,20 @@ __global__ void matmulvec(float* mat, float* vec, int height, int width, float* 
 		}
 		out[i] = result;
 	}
+}
+
+__global__ void matmulmat(float* left, float* right,
+	int height, int width, int shared, float* out)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+	float result = 0.0f;
+	for (int loopIdx = 0; loopIdx < shared; ++loopIdx)
+	{
+		result += left[i * shared + loopIdx] * right[loopIdx * width + j];
+	}
+	out[i * width + j] = result;
 }
 
 __global__ void matTmulvec(float* mat, float* vec, int height, int width, float* out)
@@ -320,14 +394,13 @@ class layer
 public:
 	size_t units;
 	size_t input_length;
-	c_vector activations;
-	c_vector pre_activations;
-	c_vector errors;
-	c_matrix weights{1, 1};
+	c_matrix activations {1, 1};
+	c_matrix pre_activations {1, 1};
+	c_matrix errors {1, 1};
+	c_matrix weights {1, 1};
 	activation act;
 	layer(size_t p_units=16, activation act_p=relu, size_t p_input_length=1):
-	units{p_units}, activations{units + 1}, pre_activations{units}, errors{units},
-	act{act_p}, input_length{p_input_length}
+	units{p_units}, act{act_p}, input_length{p_input_length}
 	{}
 	void forward(float* input)
 	{
@@ -344,6 +417,12 @@ public:
 	{
 		input_length = length;
 		weights = c_matrix(units, input_length);
+	}
+	void initialize_with_batch_size(size_t batch_size)
+	{
+		activations = c_matrix(units + 1, batch_size);
+		pre_activations = c_matrix(units, batch_size);
+		errors = c_matrix(units, batch_size);
 	}
 
 };
@@ -393,11 +472,15 @@ public:
 		cudaMalloc((void**) &d_learning_rate, sizeof(float));
 		cudaMalloc((void**) &d_correct_label, sizeof(int));
 	}
-	bool finalize()
+	bool finalize(size_t batch_size)
 	{
 		if (get_out_err_func(loss_func, layers.back().act.f))
 		{
 			out_err_func = get_out_err_func(loss_func, layers.back().act.f);
+			for(layer l : layers)
+			{
+				l.initialize_with_batch_size(batch_size);	
+			}
 			final = true;
 			return true;
 		}
@@ -405,7 +488,8 @@ public:
 	}
 	void add(layer l)
 	{
-		if(!layers.empty()){
+		if(!layers.empty())
+		{
 			l.set_input_lenght(layers.back().activations.length);
 			layers.push_back(l);
 		}else{
@@ -422,6 +506,8 @@ public:
 			temp_results = l->activations.d_copy;
 		}
 	}
+	void batch_forward_pass(float* a)
+	{}
 	void backprop(int target)
 	{
 		out_err_func<<<2, 8>>>(layers.back().activations.d_copy, layers.back().errors.d_copy, layers.back().units, target);
@@ -438,34 +524,37 @@ public:
 			(l->errors.d_copy, (l - 1)->activations.d_copy, l->weights.d_copy, learning_rate); 
 		}
 	}
-	bool single_train(mnist_data_point& dp)
+	bool single_train(float* image, int label)
 	{
-		forward_pass(dp.image);
+		forward_pass(image);
 		float* result = layers.back().activations.read();
 		int prediction = std::max_element(result, result + layers.back().units) - result;
-		backprop(dp.label);
+		backprop(label);
 		weight_update();
-		return prediction == dp.label;
+		return prediction == label;
 	}
-	bool single_test(mnist_data_point& dp)
+	bool single_test(float* image, int label)
 	{
-		forward_pass(dp.image);
+		forward_pass(image);
 		float* result = layers.back().activations.read();
 		int prediction = std::max_element(result, result + layers.back().units) - result;
-		return prediction == dp.label;
+		return prediction == label;
 	}
-	void train(std::vector<mnist_data_point>& data, int epochs)
+	void train(std::vector<mnist_image>& images,
+		std::vector<mnist_label>& labels,
+		int epochs,
+		size_t batch_size)
 	{
-		if (finalize())
+		if (finalize(batch_size))
 		{
 			for (int epoch = 1; epoch <= epochs; ++epoch)
 			{
 				auto tik = std::chrono::high_resolution_clock::now();
-				int num_of_data = data.size();
+				int num_of_data = images.size();
 				float acc = 0;
-				for (auto dp : data)
+				for (int loopIdx = 0; loopIdx < num_of_data; ++loopIdx)
 				{
-					if(single_train(dp))
+					if(single_train(images[loopIdx].image, labels[loopIdx].label))
 					{
 						acc += 1.0f / num_of_data;
 					}
@@ -478,13 +567,13 @@ public:
 			std::cout << "Could not finalize model. \n";
 		}
 	}
-	void test(std::vector<mnist_data_point>& data)
+	void test(std::vector<mnist_image>& images, std::vector<mnist_label>& labels)
 	{
-		int num_of_data = data.size();
+		int num_of_data = images.size();
 		float acc = 0;
-		for (auto dp : data)
+		for (int loopIdx = 0; loopIdx < num_of_data; ++loopIdx)
 		{
-			if(single_test(dp))
+			if(single_test(images[loopIdx].image, labels[loopIdx].label))
 			{
 				acc += 1.0f / num_of_data;
 			}
@@ -495,11 +584,13 @@ public:
 
 int main()
 {
-	std::srand(static_cast<unsigned int>(std::time(nullptr)));
+	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	auto test_data = mnist_parse("sample_data/mnist_test.csv");
-	auto train_data = mnist_parse("sample_data/mnist_train_small.csv");
+	auto test_images = mnist_parse_image("sample_data/mnist_test.csv");
+	auto test_labels = mnist_parse_label("sample_data/mnist_test.csv");
+	auto train_images = mnist_parse_image("sample_data/mnist_train_small.csv");
+	auto train_labels = mnist_parse_label("sample_data/mnist_train_small.csv");
 
 	// model mnist_model(mean_square_error, 0.5f);
 	// mnist_model.add(layer(784));
@@ -513,18 +604,18 @@ int main()
 	mnist_model.add(layer(16));
 	mnist_model.add(layer(10, softmax));
 
-	auto tik = std::chrono::high_resolution_clock::now();
-	mnist_model.train(train_data, 3);
-	auto tok = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	std::cout << ms_double.count() << "ms \n";
+	// auto tik = std::chrono::high_resolution_clock::now();
+	mnist_model.train(train_images, train_labels, 3);
+	// auto tok = std::chrono::high_resolution_clock::now();
+	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	// std::cout << ms_double.count() << "ms \n";
 	// mnist_model.learning_rate = 0.005f;
 	// mnist_model.train(train_data, 5);
 	// mnist_model.learning_rate = 0.001f;
 	// mnist_model.train(train_data, 5);
 
 
-	mnist_model.test(test_data);
+	mnist_model.test(test_images, test_labels);
 
 	return 0;
 }
