@@ -259,18 +259,17 @@ __global__ void matmulmat(c_matrix left, c_matrix right, c_matrix out)
 	*out.at(i, j) = result;
 }
 
-__global__ void matTmulvec(float* mat, float* vec, int height, int width, float* out)
+__global__ void matmulmatT(c_matrix left, c_matrix right, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < width)
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+	float result = 0.0f;
+	for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
 	{
-		float result = 0.0f;
-		for (int j = 0; j < height; ++j)
-		{
-			result += mat[j * width + i] * vec[j];
-		}
-		out[i] = result;
+		result += *left.at(i, loopIdx) * (*right.at(j, loopIdx));
 	}
+	*out.at(i, j) = result;
 }
 
 __global__ void relu_kernel(c_matrix in, c_matrix out)
@@ -305,27 +304,28 @@ __global__ void sigmoid_derivative(float* input, float* output, size_t size)
 	}
 }
 
-__global__ void elementwisemul(float* input1, float* input2, float* output, size_t size)
+__global__ void elementwisemul(c_matrix left, c_matrix right, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < size)
-	{
-		output[i] = input1[i] * input2[i];
-	}
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+	*out.at(i, j) = *left.at(i, j) * (*right.at(i, j));
 }
 
-__global__ void relu_derivative(float* input, float* output, size_t size)
+__global__ void relu_derivative(c_matrix in, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < size)
-	{
-		if (input[i] < 0)
-		{
-			output[i] = 0;
-		}else{
-			output[i] = 1;
-		}
-	}
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	// if (i < size)
+	// {
+	// 	if (input[i] < 0)
+	// 	{
+	// 		output[i] = 0;
+	// 	}else{
+	// 		output[i] = 1;
+	// 	}
+	// }
+	*out.at(i, j) = (*in.at(i, j) < 0.0f) ? 0.0f : 1.0f;
 }
 
 __global__ void softmax_kernel(c_matrix in, c_matrix out)
@@ -340,33 +340,27 @@ __global__ void softmax_kernel(c_matrix in, c_matrix out)
 	*out.at(i, j) = expf(*in.at(i, j)) / sum;
 }
 
-__global__ void softmax_crossen_error(float* input, float* output, size_t size, int target)
+__global__ void softmax_crossen_error(c_matrix in, c_matrix out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < size)
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	if (i == targets[j])
 	{
-		if (i == target)
-		{
-			output[i] = (input[i] - 1);
-		}else{
-			output[i] = input[i];
-		}
-
+		*out.at(i, j) = *in.at(i, j) - 1;
+	}else{
+		*out.at(i, j) = *in.at(i, j);
 	}
 }
 
-__global__ void sigmoid_square_error(float* input, float* output, size_t size, int target)
+__global__ void sigmoid_square_error(c_matrix in, c_matrix out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < size)
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	if (i == targets[j])
 	{
-		if (i == target)
-		{
-			output[i] = (input[i] - 1) * input[i] * (1 - input[i]);
-		}else{
-			output[i] = (input[i]) * input[i] * (1 - input[i]);
-		}
-
+		*out.at(i, j) = (*in.at(i, j) - 1) * (*in.at(i, j)) * (1 - *in.at(i, j));
+	}else{
+		*out.at(i, j) = *in.at(i, j) * (*in.at(i, j)) * (1 - *in.at(i, j));
 	}
 }
 
@@ -380,18 +374,40 @@ __global__ void mean_square_error(float* input, float* output, size_t size)
 	// int i = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
-__global__ void weight_update_kernel(float* errors, float* last_activations, float* weights, float learning_rate)
+__global__ void weight_update_kernel(c_matrix errors, c_matrix last_activations, c_matrix weights, float learning_rate)
 {
-	int i = threadIdx.x * gridDim.x + blockIdx.x;
-	weights[i] += (-learning_rate * errors[threadIdx.x] * last_activations[blockIdx.x]);
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	if (i < weights.height && j < weights.width)
+	{
+		float result = 0.0f;
+		for (int loopIdx = 0; loopIdx < errors.height; ++loopIdx)
+		{
+			result += *errors.at(loopIdx, i) * (*last_activations.at(loopIdx, j));
+		}
+		*weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
+	}
+}
+
+__global__ void update_correct_labels(c_matrix acts, int* labels, int* correct_predictions)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int maxIdx = 0;
+	for (int loopIdx = 1; loopIdx < acts.width - 1; ++loopIdx)
+	{
+		if (*acts.at(i, loopIdx) > *acts.at(i, maxIdx))
+			maxIdx = loopIdx;
+	}
+	if (maxIdx == labels[i])//maxIdx == labels[i]
+		atomicAdd(correct_predictions, 1);
 }
 
 class activation
 {
 public:
 	void (*f)(c_matrix, c_matrix);
-	void (*d)(float*, float*, size_t);
-	activation(void (*p_f)(c_matrix, c_matrix), void (*p_d)(float*, float*, size_t)):
+	void (*d)(c_matrix, c_matrix);
+	activation(void (*p_f)(c_matrix, c_matrix), void (*p_d)(c_matrix, c_matrix)):
 	f{p_f}, d{p_d}
 	{} 
 };
@@ -415,14 +431,14 @@ public:
 	{}
 	void forward(c_matrix input)
 	{
-		matmulmat<<<dim3(2, 2), dim3(16, 8)>>>(input, weights, pre_activations);
-		act.f<<<dim3(2, 2), dim3(16, 8)>>>(pre_activations, activations);
+		matmulmat<<<dim3(2, 2), dim3(input.height / 2, units / 2)>>>(input, weights, pre_activations);
+		act.f<<<dim3(2, 2), dim3(input.height / 2, units / 2)>>>(pre_activations, activations);
 	}
 	void backward(c_matrix& nlw, c_matrix& nle)
 	{
-		matTmulvec<<<2, 8>>>(nlw.d_copy, nle.d_copy, nlw.height, nlw.width, errors.d_copy);
-		// act.d<<<2, 8>>>(pre_activations.d_copy, pre_activations.d_copy, pre_activations.length);
-		// elementwisemul<<<2, 8>>>(errors.d_copy, pre_activations.d_copy, errors.d_copy, errors.length);
+		matmulmatT<<<dim3(2, 2), dim3(nle.height / 2, units / 2)>>>(nle, nlw, errors);
+		act.d<<<dim3(2, 2), dim3(pre_activations.height / 2, units / 2)>>>(pre_activations, pre_activations);
+		elementwisemul<<<dim3(2, 2), dim3(errors.height / 2, units / 2)>>>(errors, pre_activations, errors);
 	}
 	void set_input_lenght(size_t length)
 	{
@@ -437,7 +453,7 @@ public:
 	}
 };
 
-typedef void (*out_err_fptr)(float*, float*, size_t, int);
+typedef void (*out_err_fptr)(c_matrix, c_matrix, int*);
 
 out_err_fptr get_out_err_func(
 	void (*out_loss)(float*, float*, size_t),
@@ -466,21 +482,29 @@ out_err_fptr get_out_err_func(
 class model
 {
 public:
-	std::vector<layer> layers{};
-	float* d_loss{};
-	int* d_correct_label{};
+	std::vector<layer> layers {};
+	int* d_correct_labels {};
 	void (*loss_func)(float*, float*, size_t);
-	void (*out_err_func)(float*, float*, size_t, int);
+	void (*out_err_func)(c_matrix, c_matrix, int*);
 	bool final {false};
 	float learning_rate;
-	float* d_learning_rate;
+	int* d_correct_predictions {};
 
 	model(void (*p_loss_func)(float*, float*, size_t), float p_learning_rate):
 	loss_func{p_loss_func}, learning_rate{p_learning_rate}
 	{
-		cudaMalloc((void**) &d_loss, sizeof(float));
-		cudaMalloc((void**) &d_learning_rate, sizeof(float));
-		cudaMalloc((void**) &d_correct_label, sizeof(int));
+		cudaMalloc((void **) &d_correct_predictions, sizeof(int));
+	}
+	void reset_correct_predictions()
+	{
+		int zero {0};
+		cudaMemcpy(d_correct_predictions, &zero, sizeof(int), cudaMemcpyHostToDevice);
+	}
+	int read_correct_predictions()
+	{
+		int ans {};
+		cudaMemcpy(&ans, d_correct_predictions, sizeof(int), cudaMemcpyDeviceToHost);
+		return ans;
 	}
 	bool finalize(size_t batch_size)
 	{
@@ -491,6 +515,7 @@ public:
 			{
 				layers[loopIdx].initialize_with_batch_size(batch_size);	
 			}
+			cudaMalloc((void**) &d_correct_labels, sizeof(int) * batch_size);
 			final = true;
 			return true;
 		}
@@ -500,13 +525,13 @@ public:
 	{
 		if(!layers.empty())
 		{
-			l.set_input_lenght(layers.back().units);
+			l.set_input_lenght(layers.back().units + 1);
 			layers.push_back(l);
 		}else{
 			layers.push_back(l);
 		}
 	}
-	void forward_pass(float* input_data, size_t batch_size)
+	void move_batch(float* input_data, int* targets, size_t batch_size)
 	{
 		cudaMemcpy2D(
 			layers.front().activations.d_copy,
@@ -517,46 +542,50 @@ public:
 			batch_size,
 			cudaMemcpyHostToDevice);
 
-		// c_matrix temp_results = layers.front().activations;
-		// for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
-		// {
-		// 	l->forward(temp_results);
-		// 	temp_results = l->activations;
-		// }
+		cudaMemcpy(d_correct_labels, targets, sizeof(int) * batch_size, cudaMemcpyHostToDevice);
 	}
-	void backprop(int target)
+	void forward_pass(size_t batch_size)
 	{
-		out_err_func<<<2, 8>>>(layers.back().activations.d_copy, layers.back().errors.d_copy, layers.back().units, target);
+		c_matrix temp_results = layers.front().activations;
+		for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
+		{
+			l->forward(temp_results);
+			temp_results = l->activations;
+		}
+		update_correct_labels<<<1, batch_size>>>
+			(layers.back().activations, d_correct_labels, d_correct_predictions);
+	}
+	void backprop(size_t batch_size)
+	{
+		out_err_func<<<dim3(2, 2), dim3(batch_size / 2, layers.back().units / 2)>>>
+			(layers.back().activations, layers.back().errors, d_correct_labels);
 		for (std::vector<layer>::iterator l = layers.end() - 2; l != layers.begin(); --l)
 		{
 			l->backward((l + 1)->weights, (l + 1)->errors);
 		}
 	}
-	// void weight_update()
-	// {
-	// 	for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
-	// 	{
-	// 		weight_update_kernel<<<(l - 1)->activations.length, l->errors.length>>>
-	// 		(l->errors.d_copy, (l - 1)->activations.d_copy, l->weights.d_copy, learning_rate); 
-	// 	}
-	// }
-	bool single_train(float* image, int* label, size_t batch_size)
+	void weight_update()
 	{
-		forward_pass(image, batch_size);
-		float* result = layers.back().activations.read();
-		int prediction = std::max_element(result, result + layers.back().units) - result;
-		backprop(*label);
-		// weight_update();
-		return prediction == *label;
+		for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
+		{
+			weight_update_kernel<<<dim3(2, 2), dim3(l->weights.height/2 + 1, l->weights.width/2 + 1)>>>
+			(l->errors, (l - 1)->activations, l->weights, learning_rate); 
+		}
 	}
-	bool single_test(float* image, int label, size_t batch_size)
+	void single_train(float* image, int* label, size_t batch_size)
 	{
-		forward_pass(image, batch_size);
-		float* result = layers.back().activations.read();
-		int prediction = std::max_element(result, result + layers.back().units) - result;
-		return prediction == label;
+		move_batch(image, label, batch_size);
+		forward_pass(batch_size);
+		backprop(batch_size);
+		weight_update();
 	}
-	void train(std::vector<mnist_image>& images,
+	void single_test(float* image, int* label, size_t batch_size)
+	{
+		move_batch(image, label, batch_size);
+		forward_pass(batch_size);
+	}
+	void train(
+		std::vector<mnist_image>& images,
 		std::vector<mnist_label>& labels,
 		int epochs,
 		size_t batch_size)
@@ -566,35 +595,31 @@ public:
 			for (int epoch = 1; epoch <= epochs; ++epoch)
 			{
 				auto tik = std::chrono::high_resolution_clock::now();
+				reset_correct_predictions();
 				int num_of_data = images.size();
-				float acc = 0;
-				for (int loopIdx = 0; loopIdx = num_of_data; loopIdx += batch_size)
+				for (int loopIdx = 0; loopIdx < num_of_data; loopIdx += batch_size)
 				{
-					if(single_train(images[loopIdx].image, &labels[loopIdx].label, batch_size))
-					{
-						acc += 1.0f / num_of_data;
-					}
+					single_train(images[loopIdx].image, &labels[loopIdx].label, batch_size);
 				}
 				auto tok = std::chrono::high_resolution_clock::now();
 				std::chrono::duration<double, std::milli> ms_double = tok - tik;
-				std::cout << "Epoch " << epoch << ": acc = " << acc << " in " << ms_double.count() << "ms.\n"; 
+				std::cout << "Epoch " << epoch << ": acc = ";
+				std::cout << read_correct_predictions()/(float)num_of_data; 
+				std::cout << " in " << ms_double.count() << "ms.\n"; 
 			}
 		}else{
 			std::cout << "Could not finalize model. \n";
 		}
 	}
-	void test(std::vector<mnist_image>& images, std::vector<mnist_label>& labels)
+	void test(std::vector<mnist_image>& images, std::vector<mnist_label>& labels, size_t batch_size)
 	{
 		int num_of_data = images.size();
-		float acc = 0;
-		for (int loopIdx = 0; loopIdx < num_of_data; ++loopIdx)
+		reset_correct_predictions();
+		for (int loopIdx = 0; loopIdx < num_of_data; loopIdx += batch_size)
 		{
-			if(single_test(images[loopIdx].image, labels[loopIdx].label, 1))
-			{
-				acc += 1.0f / num_of_data;
-			}
+			single_test(images[loopIdx].image, &labels[loopIdx].label, batch_size);
 		}
-		std::cout << "test acc = " << acc << '\n';
+		std::cout << "test acc = " << read_correct_predictions()/(float)num_of_data << '\n';
 	}
 };
 
@@ -608,6 +633,7 @@ int main()
 	auto train_images = mnist_parse_image("sample_data/mnist_train_small.csv");
 	auto train_labels = mnist_parse_label("sample_data/mnist_train_small.csv");
 
+
 	// model mnist_model(mean_square_error, 0.5f);
 	// mnist_model.add(layer(784));
 	// mnist_model.add(layer(16, sigmoid));
@@ -620,15 +646,15 @@ int main()
 	mnist_model.add(layer(16));
 	mnist_model.add(layer(10, softmax));
 
-	mnist_model.finalize(32);
+	mnist_model.finalize(1);
 
-	mnist_model.forward_pass(train_images[0].image, 32);
-	mnist_model.layers[1].forward(mnist_model.layers[0].activations);
-	std::cout << mnist_model.layers[0].activations << '\n';
-	std::cout << mnist_model.layers[1].activations << '\n';
+	std::cout << mnist_model.layers[2].weights << '\n';
+	mnist_model.single_train(train_images[0].image, &train_labels[0].label, 1);
+	std::cout << mnist_model.layers[2].weights << '\n';
+	std::cout << mnist_model.layers[2].errors << '\n';
 
 	// auto tik = std::chrono::high_resolution_clock::now();
-	// mnist_model.train(train_images, train_labels, 3);
+	// mnist_model.train(train_images, train_labels, 7, 1);
 	// auto tok = std::chrono::high_resolution_clock::now();
 	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
 	// std::cout << ms_double.count() << "ms \n";
@@ -637,8 +663,7 @@ int main()
 	// mnist_model.learning_rate = 0.001f;
 	// mnist_model.train(train_data, 5);
 
-
-	// mnist_model.test(test_images, test_labels);
+	// mnist_model.test(test_images, test_labels, 1);
 
 	return 0;
 }
