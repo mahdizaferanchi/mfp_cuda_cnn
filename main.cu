@@ -9,8 +9,6 @@
 #include <chrono>
 #include <string>
 
-
-
 class mnist_data_point
 {
 public:
@@ -250,26 +248,30 @@ __global__ void matmulmat(c_matrix left, c_matrix right, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-
-	float result = 0.0f;
-	for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
+	if (i < left.height)
 	{
-		result += *left.at(i, loopIdx) * (*right.at(loopIdx, j));
+		float result = 0.0f;
+		for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
+		{
+			result += *left.at(i, loopIdx) * (*right.at(loopIdx, j));
+		}
+		*out.at(i, j) = result;
 	}
-	*out.at(i, j) = result;
 }
 
 __global__ void matmulmatT(c_matrix left, c_matrix right, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-
-	float result = 0.0f;
-	for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
+	if (i < left.height)
 	{
-		result += *left.at(i, loopIdx) * (*right.at(j, loopIdx));
+		float result = 0.0f;
+		for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
+		{
+			result += *left.at(i, loopIdx) * (*right.at(j, loopIdx));
+		}
+		*out.at(i, j) = result;
 	}
-	*out.at(i, j) = result;
 }
 
 __global__ void relu_kernel(c_matrix in, c_matrix out)
@@ -283,7 +285,8 @@ __global__ void relu_kernel(c_matrix in, c_matrix out)
 	// }else{
 	// 	out.at(i, j) = in.at(i, j);
 	// }
-	*out.at(i, j) = (*in.at(i, j) < 0) ? 0 : *in.at(i, j);
+	if (i < in.height)
+		*out.at(i, j) = (*in.at(i, j) < 0) ? 0 : *in.at(i, j);
 }
 
 __global__ void sigmoid_kernel(float* input, float* output, size_t size)
@@ -309,7 +312,8 @@ __global__ void elementwisemul(c_matrix left, c_matrix right, c_matrix out)
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
 
-	*out.at(i, j) = *left.at(i, j) * (*right.at(i, j));
+	if (i < left.height)
+		*out.at(i, j) = *left.at(i, j) * (*right.at(i, j));
 }
 
 __global__ void relu_derivative(c_matrix in, c_matrix out)
@@ -325,30 +329,37 @@ __global__ void relu_derivative(c_matrix in, c_matrix out)
 	// 		output[i] = 1;
 	// 	}
 	// }
-	*out.at(i, j) = (*in.at(i, j) < 0.0f) ? 0.0f : 1.0f;
+	if (i < in.height)
+		*out.at(i, j) = (*in.at(i, j) < 0.0f) ? 0.0f : 1.0f;
 }
 
 __global__ void softmax_kernel(c_matrix in, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	float sum = 0;
-	for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
+	if (i < in.height)
 	{
-		sum += expf(*in.at(i, loopIdx));
+		float sum = 0;
+		for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
+		{
+			sum += expf(*in.at(i, loopIdx));
+		}
+		*out.at(i, j) = expf(*in.at(i, j)) / sum;
 	}
-	*out.at(i, j) = expf(*in.at(i, j)) / sum;
 }
 
 __global__ void softmax_crossen_error(c_matrix in, c_matrix out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	if (i == targets[j])
+	if (i < in.height && j < in.width)
 	{
-		*out.at(i, j) = *in.at(i, j) - 1;
-	}else{
-		*out.at(i, j) = *in.at(i, j);
+		if (j == targets[i])
+		{
+			*out.at(i, j) = *in.at(i, j) - 1;
+		}else{
+			*out.at(i, j) = *in.at(i, j);
+		}
 	}
 }
 
@@ -356,11 +367,14 @@ __global__ void sigmoid_square_error(c_matrix in, c_matrix out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	if (i == targets[j])
+	if (i < in.height)
 	{
-		*out.at(i, j) = (*in.at(i, j) - 1) * (*in.at(i, j)) * (1 - *in.at(i, j));
-	}else{
-		*out.at(i, j) = *in.at(i, j) * (*in.at(i, j)) * (1 - *in.at(i, j));
+		if (i == targets[j])
+		{
+			*out.at(i, j) = (*in.at(i, j) - 1) * (*in.at(i, j)) * (1 - *in.at(i, j));
+		}else{
+			*out.at(i, j) = *in.at(i, j) * (*in.at(i, j)) * (1 - *in.at(i, j));
+		}
 	}
 }
 
@@ -383,7 +397,7 @@ __global__ void weight_update_kernel(c_matrix errors, c_matrix last_activations,
 		float result = 0.0f;
 		for (int loopIdx = 0; loopIdx < errors.height; ++loopIdx)
 		{
-			result += *errors.at(loopIdx, i) * (*last_activations.at(loopIdx, j));
+			result += *last_activations.at(loopIdx, i) * (*errors.at(loopIdx, j));
 		}
 		*weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
 	}
@@ -431,14 +445,14 @@ public:
 	{}
 	void forward(c_matrix input)
 	{
-		matmulmat<<<dim3(2, 2), dim3(input.height / 2, units / 2)>>>(input, weights, pre_activations);
-		act.f<<<dim3(2, 2), dim3(input.height / 2, units / 2)>>>(pre_activations, activations);
+		matmulmat<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2)>>>(input, weights, pre_activations);
+		act.f<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2)>>>(pre_activations, activations);
 	}
 	void backward(c_matrix& nlw, c_matrix& nle)
 	{
-		matmulmatT<<<dim3(2, 2), dim3(nle.height / 2, units / 2)>>>(nle, nlw, errors);
-		act.d<<<dim3(2, 2), dim3(pre_activations.height / 2, units / 2)>>>(pre_activations, pre_activations);
-		elementwisemul<<<dim3(2, 2), dim3(errors.height / 2, units / 2)>>>(errors, pre_activations, errors);
+		matmulmatT<<<dim3(2, 2), dim3(nle.height / 2 + 1, units / 2)>>>(nle, nlw, errors);
+		act.d<<<dim3(2, 2), dim3(pre_activations.height / 2 + 1, units / 2)>>>(pre_activations, pre_activations);
+		elementwisemul<<<dim3(2, 2), dim3(errors.height / 2 + 1, units / 2)>>>(errors, pre_activations, errors);
 	}
 	void set_input_lenght(size_t length)
 	{
@@ -557,7 +571,7 @@ public:
 	}
 	void backprop(size_t batch_size)
 	{
-		out_err_func<<<dim3(2, 2), dim3(batch_size / 2, layers.back().units / 2)>>>
+		out_err_func<<<dim3(2, 2), dim3(batch_size / 2 + 1, layers.back().units / 2)>>>
 			(layers.back().activations, layers.back().errors, d_correct_labels);
 		for (std::vector<layer>::iterator l = layers.end() - 2; l != layers.begin(); --l)
 		{
@@ -568,7 +582,8 @@ public:
 	{
 		for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
 		{
-			weight_update_kernel<<<dim3(2, 2), dim3(l->weights.height/2 + 1, l->weights.width/2 + 1)>>>
+			int var = (l->weights.height > 50) ? 20 : 2;
+			weight_update_kernel<<<dim3(var, 2), dim3(l->weights.height/var + 1, l->weights.width/2 + 1)>>>
 			(l->errors, (l - 1)->activations, l->weights, learning_rate); 
 		}
 	}
@@ -640,31 +655,25 @@ int main()
 	// mnist_model.add(layer(16, sigmoid));
 	// mnist_model.add(layer(10, sigmoid));
 
-	model mnist_model(cross_entropy, 0.01f);
+	model mnist_model(cross_entropy, 0.05f);
 	mnist_model.add(layer(784));
 	mnist_model.add(layer(16));
 	mnist_model.add(layer(16));
 	mnist_model.add(layer(10, softmax));
 
-	mnist_model.finalize(1);
+	// mnist_model.finalize(1);
 
-	std::cout << mnist_model.layers[2].weights << '\n';
-	mnist_model.single_train(train_images[0].image, &train_labels[0].label, 1);
-	std::cout << mnist_model.layers[2].weights << '\n';
-	std::cout << mnist_model.layers[2].errors << '\n';
-
-	// auto tik = std::chrono::high_resolution_clock::now();
-	// mnist_model.train(train_images, train_labels, 7, 1);
-	// auto tok = std::chrono::high_resolution_clock::now();
-	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	// std::cout << ms_double.count() << "ms \n";
+	auto tik = std::chrono::high_resolution_clock::now();
+	mnist_model.train(train_images, train_labels, 10, 32);
+	auto tok = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	std::cout << ms_double.count() << "ms \n";
 	// mnist_model.learning_rate = 0.005f;
 	// mnist_model.train(train_data, 5);
 	// mnist_model.learning_rate = 0.001f;
 	// mnist_model.train(train_data, 5);
 
-	// mnist_model.test(test_images, test_labels, 1);
+	mnist_model.test(test_images, test_labels, 32);
 
 	return 0;
 }
-
