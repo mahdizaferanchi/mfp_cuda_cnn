@@ -9,6 +9,63 @@
 #include <chrono>
 #include <string>
 
+
+template <class T, size_t S, size_t item_length>
+class pinned_data
+{
+public:
+	T* beginning {};
+	T* end;
+	size_t size = S;
+	pinned_data(const std::string& file_name)
+	{
+		cudaMallocHost((void**) &beginning, sizeof(T) * size * item_length, 4);
+		end = beginning;
+		std::ifstream file(file_name);
+		std::string data_point_string;
+		if (item_length == 1)
+		{
+			while(std::getline(file, data_point_string))
+			{
+				add_label(data_point_string);
+			}
+		}else{
+			while(std::getline(file, data_point_string))
+			{
+				add_image(data_point_string);
+			}
+		}
+	}
+	void add_image(std::string& str)
+	{
+		std::stringstream line(str);
+		std::string num;
+		std::vector<std::string> nums;
+		while(std::getline(line, num, ','))
+		{
+			nums.push_back(num);
+		}
+		for (int i = 0; i < 784; ++i)
+		{
+			end[i] = static_cast<float> (std::stoi(nums[i + 1])) / 255.0;
+		}
+		end[784] = 1.0f;
+		end += 785;
+	}
+	void add_label(std::string& str)
+	{
+		std::stringstream line(str);
+		std::string num;
+		std::getline(line, num, ',');
+		end[0] = std::stoi(num);
+		end += 1;
+	}
+	T* operator[](int idx)
+	{
+		return &beginning[idx * item_length];
+	}
+};
+
 class mnist_data_point
 {
 public:
@@ -30,7 +87,6 @@ public:
 		}
 	}
 };
-
 class mnist_image
 {
 public:
@@ -611,20 +667,22 @@ public:
 	{
 		auto t0 = std::chrono::high_resolution_clock::now();
 		move_batch(image, label, batch_size);
+		cudaDeviceSynchronize();
 		auto t1 = std::chrono::high_resolution_clock::now();
 		forward_pass(batch_size);
-		auto t2 = std::chrono::high_resolution_clock::now();
+		// auto t2 = std::chrono::high_resolution_clock::now();
 		backprop(batch_size);
-		auto t3 = std::chrono::high_resolution_clock::now();
+		// auto t3 = std::chrono::high_resolution_clock::now();
 		weight_update();
+		cudaDeviceSynchronize();
 		auto t4 = std::chrono::high_resolution_clock::now();
 		std::chrono::nanoseconds move_time = t1 - t0;
-		std::chrono::nanoseconds forward_time = t2 - t1;
-		std::chrono::nanoseconds back_time = t3 - t2;
-		std::chrono::nanoseconds update_time = t4 - t3;
+		// std::chrono::nanoseconds forward_time = t2 - t1;
+		// std::chrono::nanoseconds back_time = t3 - t2;
+		std::chrono::nanoseconds update_time = t4 - t1;
 		std::cout << move_time.count() << "ns \n";
-		std::cout << forward_time.count() << "ns \n";
-		std::cout << back_time.count() << "ns \n";
+		// std::cout << forward_time.count() << "ns \n";
+		// std::cout << back_time.count() << "ns \n";
 		std::cout << update_time.count() << "ns \n";
 	}
 	void single_train(float* image, int* label, size_t batch_size)
@@ -639,11 +697,14 @@ public:
 	void single_test(float* image, int* label, size_t batch_size)
 	{
 		move_batch(image, label, batch_size);
+		cudaDeviceSynchronize();
 		forward_pass(batch_size);
+		cudaDeviceSynchronize();
 	}
+	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
 	void train(
-		std::vector<mnist_image>& images,
-		std::vector<mnist_label>& labels,
+		pinned_data<T1, S, item_length1> images,
+		pinned_data<T2, S, item_length2> labels,
 		int epochs,
 		size_t batch_size)
 	{
@@ -652,11 +713,11 @@ public:
 			for (int epoch = 1; epoch <= epochs; ++epoch)
 			{
 				reset_correct_predictions();
-				int num_of_data = images.size();
+				int num_of_data = images.size;
 				auto tik = std::chrono::high_resolution_clock::now();
 				for (int loopIdx = 0; loopIdx < num_of_data; loopIdx += batch_size)
 				{
-					single_train(images[loopIdx].image, labels[loopIdx].label, batch_size);
+					single_train(images[loopIdx], labels[loopIdx], batch_size);
 				}
 				auto tok = std::chrono::high_resolution_clock::now();
 				std::chrono::duration<double, std::milli> ms_double = tok - tik;
@@ -668,13 +729,17 @@ public:
 			std::cout << "Could not finalize model. \n";
 		}
 	}
-	void test(std::vector<mnist_image>& images, std::vector<mnist_label>& labels, size_t batch_size)
+	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
+	void test(
+		pinned_data<T1, S, item_length1> images,
+		pinned_data<T2, S, item_length2> labels,
+		size_t batch_size)
 	{
-		int num_of_data = images.size();
+		int num_of_data = images.size;
 		reset_correct_predictions();
 		for (int loopIdx = 0; loopIdx < num_of_data; loopIdx += batch_size)
 		{
-			single_test(images[loopIdx].image, labels[loopIdx].label, batch_size);
+			single_test(images[loopIdx], labels[loopIdx], batch_size);
 		}
 		std::cout << "test acc = " << read_correct_predictions()/(float)num_of_data << '\n';
 	}
@@ -685,11 +750,15 @@ int main()
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	auto test_images = mnist_parse_image("sample_data/mnist_test.csv");
-	auto test_labels = mnist_parse_label("sample_data/mnist_test.csv");
-	auto train_images = mnist_parse_image("sample_data/mnist_train_small.csv");
-	auto train_labels = mnist_parse_label("sample_data/mnist_train_small.csv");
+	// auto test_images = mnist_parse_image("sample_data/mnist_test.csv");
+	// auto test_labels = mnist_parse_label("sample_data/mnist_test.csv");
+	// auto train_images = mnist_parse_image("sample_data/mnist_train_small.csv");
+	// auto train_labels = mnist_parse_label("sample_data/mnist_train_small.csv");
 
+	pinned_data<float, 10000, 785> test_images("sample_data/mnist_test.csv");
+	pinned_data<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
+	pinned_data<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
+	pinned_data<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
 	// model mnist_model(mean_square_error, 0.5f);
 	// mnist_model.add(layer(784));
@@ -704,8 +773,8 @@ int main()
 	mnist_model.add(layer(10, softmax));
 
 	mnist_model.finalize(32);
-	// mnist_model.single_train(train_images[0].image, train_labels[0].label, 32);
 	mnist_model.train(train_images, train_labels, 5, 32);
+	mnist_model.single_train_timed(train_images[0], train_labels[0], 32);
 
 	// for (int i = 0; i < 785; ++i)
 	// {
