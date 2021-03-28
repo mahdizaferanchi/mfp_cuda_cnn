@@ -37,6 +37,7 @@ public:
 	float image[785];
 	mnist_image(std::string& str)
 	{
+		cudaMallocHost((void**) &image, 785 * sizeof(float), 4);
 		std::stringstream line(str);
 		std::string num;
 		std::vector<std::string> nums;
@@ -55,13 +56,14 @@ public:
 class mnist_label
 {
 public:
-	int label;
+	int label[1];
 	mnist_label(std::string& str)
 	{
+		// cudaError_t status = cudaMallocHost((void**) &label, sizeof(int), 4);
 		std::stringstream line(str);
 		std::string num;
 		std::getline(line, num, ',');
-		label = std::stoi(num);
+		label[0] = std::stoi(num);
 	}
 };
 
@@ -443,16 +445,16 @@ public:
 	layer(size_t p_units=16, activation act_p=relu, size_t p_input_length=1):
 	units{p_units}, act{act_p}, input_length{p_input_length}
 	{}
-	void forward(c_matrix input)
+	void forward(c_matrix input, cudaStream_t s)
 	{
-		matmulmat<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2)>>>(input, weights, pre_activations);
-		act.f<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2)>>>(pre_activations, activations);
+		matmulmat<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2), 0, s>>>(input, weights, pre_activations);
+		act.f<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2), 0, s>>>(pre_activations, activations);
 	}
-	void backward(c_matrix& nlw, c_matrix& nle)
+	void backward(c_matrix& nlw, c_matrix& nle, cudaStream_t s)
 	{
-		matmulmatT<<<dim3(2, 2), dim3(nle.height / 2 + 1, units / 2)>>>(nle, nlw, errors);
-		act.d<<<dim3(2, 2), dim3(pre_activations.height / 2 + 1, units / 2)>>>(pre_activations, pre_activations);
-		elementwisemul<<<dim3(2, 2), dim3(errors.height / 2 + 1, units / 2)>>>(errors, pre_activations, errors);
+		matmulmatT<<<dim3(2, 2), dim3(nle.height / 2 + 1, units / 2), 0, s>>>(nle, nlw, errors);
+		act.d<<<dim3(2, 2), dim3(pre_activations.height / 2 + 1, units / 2), 0, s>>>(pre_activations, pre_activations);
+		elementwisemul<<<dim3(2, 2), dim3(errors.height / 2 + 1, units / 2), 0, s>>>(errors, pre_activations, errors);
 	}
 	void set_input_lenght(size_t length)
 	{
@@ -503,11 +505,15 @@ public:
 	bool final {false};
 	float learning_rate;
 	int* d_correct_predictions {};
+	cudaStream_t data_transfer_s;
+	cudaStream_t kernel_exec_s;
 
 	model(void (*p_loss_func)(float*, float*, size_t), float p_learning_rate):
 	loss_func{p_loss_func}, learning_rate{p_learning_rate}
 	{
 		cudaMalloc((void **) &d_correct_predictions, sizeof(int));
+		cudaStreamCreate(&data_transfer_s);
+		cudaStreamCreate(&kernel_exec_s);
 	}
 	void reset_correct_predictions()
 	{
@@ -547,35 +553,45 @@ public:
 	}
 	void move_batch(float* input_data, int* targets, size_t batch_size)
 	{
-		cudaMemcpy2D(
+
+		// auto t0 = std::chrono::high_resolution_clock::now();
+		cudaMemcpy2DAsync(
 			layers.front().activations.d_copy,
 			layers.front().activations.pitch,
 			input_data, 
 			sizeof(float) * (layers.front().units + 1),
 			sizeof(float) * (layers.front().units + 1),
 			batch_size,
-			cudaMemcpyHostToDevice);
-
-		cudaMemcpy(d_correct_labels, targets, sizeof(int) * batch_size, cudaMemcpyHostToDevice);
+			cudaMemcpyHostToDevice,
+			data_transfer_s);
+		// auto t1 = std::chrono::high_resolution_clock::now();
+		// std::chrono::nanoseconds dt = t1 - t0;
+		// std::cout << dt.count() << '\n';
+		cudaMemcpyAsync(
+			d_correct_labels, 
+			targets, 
+			sizeof(int) * batch_size, 
+			cudaMemcpyHostToDevice,
+			data_transfer_s);
 	}
 	void forward_pass(size_t batch_size)
 	{
 		c_matrix temp_results = layers.front().activations;
 		for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
 		{
-			l->forward(temp_results);
+			l->forward(temp_results, kernel_exec_s);
 			temp_results = l->activations;
 		}
-		update_correct_labels<<<1, batch_size>>>
+		update_correct_labels<<<1, batch_size, 0, kernel_exec_s>>>
 			(layers.back().activations, d_correct_labels, d_correct_predictions);
 	}
 	void backprop(size_t batch_size)
 	{
-		out_err_func<<<dim3(2, 2), dim3(batch_size / 2 + 1, layers.back().units / 2)>>>
+		out_err_func<<<dim3(2, 2), dim3(batch_size / 2 + 1, layers.back().units / 2), 0, kernel_exec_s>>>
 			(layers.back().activations, layers.back().errors, d_correct_labels);
 		for (std::vector<layer>::iterator l = layers.end() - 2; l != layers.begin(); --l)
 		{
-			l->backward((l + 1)->weights, (l + 1)->errors);
+			l->backward((l + 1)->weights, (l + 1)->errors, kernel_exec_s);
 		}
 	}
 	void weight_update()
@@ -583,16 +599,42 @@ public:
 		for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
 		{
 			int var = (l->weights.height > 50) ? 20 : 2;
-			weight_update_kernel<<<dim3(var, 2), dim3(l->weights.height/var + 1, l->weights.width/2 + 1)>>>
+			weight_update_kernel<<<
+				dim3(var, 2),
+				dim3(l->weights.height/var + 1, l->weights.width/2 + 1),
+				0, 
+				kernel_exec_s>>>
 			(l->errors, (l - 1)->activations, l->weights, learning_rate); 
 		}
+	}
+	void single_train_timed(float* image, int* label, size_t batch_size)
+	{
+		auto t0 = std::chrono::high_resolution_clock::now();
+		move_batch(image, label, batch_size);
+		auto t1 = std::chrono::high_resolution_clock::now();
+		forward_pass(batch_size);
+		auto t2 = std::chrono::high_resolution_clock::now();
+		backprop(batch_size);
+		auto t3 = std::chrono::high_resolution_clock::now();
+		weight_update();
+		auto t4 = std::chrono::high_resolution_clock::now();
+		std::chrono::nanoseconds move_time = t1 - t0;
+		std::chrono::nanoseconds forward_time = t2 - t1;
+		std::chrono::nanoseconds back_time = t3 - t2;
+		std::chrono::nanoseconds update_time = t4 - t3;
+		std::cout << move_time.count() << "ns \n";
+		std::cout << forward_time.count() << "ns \n";
+		std::cout << back_time.count() << "ns \n";
+		std::cout << update_time.count() << "ns \n";
 	}
 	void single_train(float* image, int* label, size_t batch_size)
 	{
 		move_batch(image, label, batch_size);
+		cudaDeviceSynchronize();
 		forward_pass(batch_size);
 		backprop(batch_size);
 		weight_update();
+		cudaDeviceSynchronize();
 	}
 	void single_test(float* image, int* label, size_t batch_size)
 	{
@@ -609,16 +651,16 @@ public:
 		{
 			for (int epoch = 1; epoch <= epochs; ++epoch)
 			{
-				auto tik = std::chrono::high_resolution_clock::now();
 				reset_correct_predictions();
 				int num_of_data = images.size();
+				auto tik = std::chrono::high_resolution_clock::now();
 				for (int loopIdx = 0; loopIdx < num_of_data; loopIdx += batch_size)
 				{
-					single_train(images[loopIdx].image, &labels[loopIdx].label, batch_size);
+					single_train(images[loopIdx].image, labels[loopIdx].label, batch_size);
 				}
 				auto tok = std::chrono::high_resolution_clock::now();
 				std::chrono::duration<double, std::milli> ms_double = tok - tik;
-				std::cout << "Epoch " << epoch << ": acc = ";
+				std::cout << "Epoch " << epoch << " : acc = ";
 				std::cout << read_correct_predictions()/(float)num_of_data; 
 				std::cout << " in " << ms_double.count() << "ms.\n"; 
 			}
@@ -632,7 +674,7 @@ public:
 		reset_correct_predictions();
 		for (int loopIdx = 0; loopIdx < num_of_data; loopIdx += batch_size)
 		{
-			single_test(images[loopIdx].image, &labels[loopIdx].label, batch_size);
+			single_test(images[loopIdx].image, labels[loopIdx].label, batch_size);
 		}
 		std::cout << "test acc = " << read_correct_predictions()/(float)num_of_data << '\n';
 	}
@@ -661,19 +703,32 @@ int main()
 	mnist_model.add(layer(16));
 	mnist_model.add(layer(10, softmax));
 
-	// mnist_model.finalize(1);
+	mnist_model.finalize(32);
+	// mnist_model.single_train(train_images[0].image, train_labels[0].label, 32);
+	mnist_model.train(train_images, train_labels, 5, 32);
 
-	auto tik = std::chrono::high_resolution_clock::now();
-	mnist_model.train(train_images, train_labels, 10, 32);
-	auto tok = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	std::cout << ms_double.count() << "ms \n";
+	// for (int i = 0; i < 785; ++i)
+	// {
+	// 	std::cout << train_images[0].image[i] << ' ';
+	// }
+	// std::cout << '\n';
+	// for (int i = 0; i < 785; ++i)
+	// {
+	// 	std::cout << train_images[0].image[i + 785] << ' ';
+	// }
+	// std::cout << '\n';
+
+	// auto tik = std::chrono::high_resolution_clock::now();
+	// mnist_model.train(train_images, train_labels, 10, 32);
+	// auto tok = std::chrono::high_resolution_clock::now();
+	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	// std::cout << ms_double.count() << "ms \n";
 	// mnist_model.learning_rate = 0.005f;
 	// mnist_model.train(train_data, 5);
 	// mnist_model.learning_rate = 0.001f;
 	// mnist_model.train(train_data, 5);
 
-	mnist_model.test(test_images, test_labels, 32);
+	// mnist_model.test(test_images, test_labels, 32);
 
 	return 0;
 }
