@@ -729,6 +729,38 @@ public:
 			std::cout << "Could not finalize model. \n";
 		}
 	}
+	void train_pipelined(
+		pinned_data<T1, S, item_length1> images,
+		pinned_data<T2, S, item_length2> labels,
+		int epochs,
+		size_t batch_size)
+	{
+		if (finalize(batch_size))
+		{
+			for (int epoch = 1; epoch <= epochs; ++epoch)
+			{
+				reset_correct_predictions();
+				int num_of_data = images.size;
+				auto tik = std::chrono::high_resolution_clock::now();
+				move_batch(images[0], labels[0], batch_size);
+				cudaDeviceSynchronize();
+				for (int loopIdx = 0; loopIdx < num_of_data; loopIdx += batch_size)
+				{
+					move_batch(images[loopIdx + batch_size], labels[loopIdx + batch_size], batch_size);
+					forward_pass(batch_size);
+					backprop(batch_size);
+					weight_update();
+				}
+				auto tok = std::chrono::high_resolution_clock::now();
+				std::chrono::duration<double, std::milli> ms_double = tok - tik;
+				std::cout << "Epoch " << epoch << " : acc = ";
+				std::cout << read_correct_predictions()/(float)num_of_data; 
+				std::cout << " in " << ms_double.count() << "ms.\n"; 
+			}
+		}else{
+			std::cout << "Could not finalize model. \n";
+		}
+	}
 	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
 	void test(
 		pinned_data<T1, S, item_length1> images,
@@ -775,17 +807,6 @@ int main()
 	mnist_model.finalize(32);
 	mnist_model.train(train_images, train_labels, 5, 32);
 	mnist_model.single_train_timed(train_images[0], train_labels[0], 32);
-
-	// for (int i = 0; i < 785; ++i)
-	// {
-	// 	std::cout << train_images[0].image[i] << ' ';
-	// }
-	// std::cout << '\n';
-	// for (int i = 0; i < 785; ++i)
-	// {
-	// 	std::cout << train_images[0].image[i + 785] << ' ';
-	// }
-	// std::cout << '\n';
 
 	// auto tik = std::chrono::high_resolution_clock::now();
 	// mnist_model.train(train_images, train_labels, 10, 32);
