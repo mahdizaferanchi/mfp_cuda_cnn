@@ -494,14 +494,16 @@ public:
 	size_t units;
 	size_t input_length;
 	c_matrix activations {1, 1};
+	c_matrix activations_alt {1, 1};
 	c_matrix pre_activations {1, 1};
 	c_matrix errors {1, 1};
 	c_matrix weights {1, 1};
 	activation act;
-	layer(size_t p_units=16, activation act_p=relu, size_t p_input_length=1):
-	units{p_units}, act{act_p}, input_length{p_input_length}
+	bool double_activations;
+	layer(size_t p_units=16, activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
+	units{p_units}, act{act_p}, input_length{p_input_length}, double_activations{p_double_activations}
 	{}
-	void forward(c_matrix input, cudaStream_t s)
+	void forward(c_matrix& input, cudaStream_t s)
 	{
 		matmulmat<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2), 0, s>>>(input, weights, pre_activations);
 		act.f<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2), 0, s>>>(pre_activations, activations);
@@ -522,6 +524,8 @@ public:
 		activations = c_matrix(batch_size, units + 1, true);
 		pre_activations = c_matrix(batch_size, units, true);
 		errors = c_matrix(batch_size, units, true);
+		if (double_activations)
+			activations_alt = c_matrix(batch_size, units + 1, true);
 	}
 };
 
@@ -556,6 +560,7 @@ class model
 public:
 	std::vector<layer> layers {};
 	int* d_correct_labels {};
+	int* d_correct_labels_alt {};
 	void (*loss_func)(float*, float*, size_t);
 	void (*out_err_func)(c_matrix, c_matrix, int*);
 	bool final {false};
@@ -592,6 +597,7 @@ public:
 				layers[loopIdx].initialize_with_batch_size(batch_size);	
 			}
 			cudaMalloc((void**) &d_correct_labels, sizeof(int) * batch_size);
+			cudaMalloc((void**) &d_correct_labels_alt, sizeof(int) * batch_size);
 			final = true;
 			return true;
 		}
@@ -607,13 +613,13 @@ public:
 			layers.push_back(l);
 		}
 	}
-	void move_batch(float* input_data, int* targets, size_t batch_size)
+	void move_batch(float* input_data, int* targets, size_t batch_size, bool use_alt)
 	{
 
 		// auto t0 = std::chrono::high_resolution_clock::now();
 		cudaMemcpy2DAsync(
-			layers.front().activations.d_copy,
-			layers.front().activations.pitch,
+			(use_alt ? layers.front().activations_alt.d_copy : layers.front().activations.d_copy),
+			(use_alt ? layers.front().activations_alt.pitch : layers.front().activations.pitch),
 			input_data, 
 			sizeof(float) * (layers.front().units + 1),
 			sizeof(float) * (layers.front().units + 1),
@@ -624,35 +630,47 @@ public:
 		// std::chrono::nanoseconds dt = t1 - t0;
 		// std::cout << dt.count() << '\n';
 		cudaMemcpyAsync(
-			d_correct_labels, 
+			(use_alt ? d_correct_labels_alt : d_correct_labels), 
 			targets, 
 			sizeof(int) * batch_size, 
 			cudaMemcpyHostToDevice,
 			data_transfer_s);
 	}
-	void forward_pass(size_t batch_size)
+	void forward_pass(size_t batch_size, bool use_alt)
 	{
-		c_matrix temp_results = layers.front().activations;
+		c_matrix temp_results = (use_alt ? layers.front().activations_alt : layers.front().activations);
 		for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
 		{
 			l->forward(temp_results, kernel_exec_s);
 			temp_results = l->activations;
 		}
-		update_correct_labels<<<1, batch_size, 0, kernel_exec_s>>>
-			(layers.back().activations, d_correct_labels, d_correct_predictions);
+		update_correct_labels<<<1, batch_size, 0, kernel_exec_s>>>(
+			layers.back().activations, 
+			(use_alt ? d_correct_labels_alt : d_correct_labels), 
+			d_correct_predictions);
 	}
-	void backprop(size_t batch_size)
+	void backprop(size_t batch_size, bool use_alt)
 	{
-		out_err_func<<<dim3(2, 2), dim3(batch_size / 2 + 1, layers.back().units / 2), 0, kernel_exec_s>>>
-			(layers.back().activations, layers.back().errors, d_correct_labels);
+		out_err_func<<<dim3(2, 2), dim3(batch_size / 2 + 1, layers.back().units / 2), 0, kernel_exec_s>>>(
+			layers.back().activations, 
+			layers.back().errors, 
+			(use_alt ? d_correct_labels_alt : d_correct_labels));
 		for (std::vector<layer>::iterator l = layers.end() - 2; l != layers.begin(); --l)
 		{
 			l->backward((l + 1)->weights, (l + 1)->errors, kernel_exec_s);
 		}
 	}
-	void weight_update()
+	void weight_update(bool use_alt)
 	{
-		for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
+		c_matrix& input_activations = (use_alt ? layers[0].activations_alt : layers[0].activations);
+		int dim = (layers[1].weights.height > 50) ? 20 : 2;
+		weight_update_kernel<<<
+			dim3(dim, 2),
+			dim3(layers[1].weights.height/dim + 1, layers[1].weights.width/2 + 1),
+			0, 
+			kernel_exec_s>>>
+		(layers[1].errors, input_activations, layers[1].weights, learning_rate);
+		for (std::vector<layer>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
 		{
 			int var = (l->weights.height > 50) ? 20 : 2;
 			weight_update_kernel<<<
@@ -666,14 +684,14 @@ public:
 	void single_train_timed(float* image, int* label, size_t batch_size)
 	{
 		auto t0 = std::chrono::high_resolution_clock::now();
-		move_batch(image, label, batch_size);
+		move_batch(image, label, batch_size, false);
 		cudaDeviceSynchronize();
 		auto t1 = std::chrono::high_resolution_clock::now();
-		forward_pass(batch_size);
+		forward_pass(batch_size, false);
 		// auto t2 = std::chrono::high_resolution_clock::now();
-		backprop(batch_size);
+		backprop(batch_size, false);
 		// auto t3 = std::chrono::high_resolution_clock::now();
-		weight_update();
+		weight_update(false);
 		cudaDeviceSynchronize();
 		auto t4 = std::chrono::high_resolution_clock::now();
 		std::chrono::nanoseconds move_time = t1 - t0;
@@ -687,18 +705,18 @@ public:
 	}
 	void single_train(float* image, int* label, size_t batch_size)
 	{
-		move_batch(image, label, batch_size);
+		move_batch(image, label, batch_size, false);
 		cudaDeviceSynchronize();
-		forward_pass(batch_size);
-		backprop(batch_size);
-		weight_update();
+		forward_pass(batch_size, false);
+		backprop(batch_size, false);
+		weight_update(false);
 		cudaDeviceSynchronize();
 	}
 	void single_test(float* image, int* label, size_t batch_size)
 	{
-		move_batch(image, label, batch_size);
+		move_batch(image, label, batch_size, false);
 		cudaDeviceSynchronize();
-		forward_pass(batch_size);
+		forward_pass(batch_size, false);
 		cudaDeviceSynchronize();
 	}
 	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
@@ -729,6 +747,7 @@ public:
 			std::cout << "Could not finalize model. \n";
 		}
 	}
+	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
 	void train_pipelined(
 		pinned_data<T1, S, item_length1> images,
 		pinned_data<T2, S, item_length2> labels,
@@ -739,17 +758,25 @@ public:
 		{
 			for (int epoch = 1; epoch <= epochs; ++epoch)
 			{
+				bool use_alt {false};
 				reset_correct_predictions();
 				int num_of_data = images.size;
 				auto tik = std::chrono::high_resolution_clock::now();
-				move_batch(images[0], labels[0], batch_size);
+				move_batch(images[0], labels[0], batch_size, use_alt);
 				cudaDeviceSynchronize();
-				for (int loopIdx = 0; loopIdx < num_of_data; loopIdx += batch_size)
+				for (int loopIdx = batch_size; loopIdx < num_of_data; loopIdx += batch_size)
 				{
-					move_batch(images[loopIdx + batch_size], labels[loopIdx + batch_size], batch_size);
-					forward_pass(batch_size);
-					backprop(batch_size);
-					weight_update();
+					move_batch(
+						images[loopIdx], 
+						labels[loopIdx], 
+						batch_size, 
+						!use_alt);
+					// cudaDeviceSynchronize();
+					forward_pass(batch_size, use_alt);
+					backprop(batch_size, use_alt);
+					weight_update(use_alt);
+					cudaDeviceSynchronize();
+					use_alt = !use_alt;
 				}
 				auto tok = std::chrono::high_resolution_clock::now();
 				std::chrono::duration<double, std::milli> ms_double = tok - tik;
@@ -799,26 +826,30 @@ int main()
 	// mnist_model.add(layer(10, sigmoid));
 
 	model mnist_model(cross_entropy, 0.05f);
-	mnist_model.add(layer(784));
+	mnist_model.add(layer(784, relu, true));
 	mnist_model.add(layer(16));
 	mnist_model.add(layer(16));
 	mnist_model.add(layer(10, softmax));
 
 	mnist_model.finalize(32);
-	mnist_model.train(train_images, train_labels, 5, 32);
-	mnist_model.single_train_timed(train_images[0], train_labels[0], 32);
+	// mnist_model.train_pipelined(train_images, train_labels, 10, 32);
+	// mnist_model.single_train_timed(train_images[0], train_labels[0], 32);
 
-	// auto tik = std::chrono::high_resolution_clock::now();
-	// mnist_model.train(train_images, train_labels, 10, 32);
-	// auto tok = std::chrono::high_resolution_clock::now();
-	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	// std::cout << ms_double.count() << "ms \n";
-	// mnist_model.learning_rate = 0.005f;
-	// mnist_model.train(train_data, 5);
+	auto tik = std::chrono::high_resolution_clock::now();
+
+	mnist_model.train_pipelined(train_images, train_labels, 7, 32);
+
 	// mnist_model.learning_rate = 0.001f;
-	// mnist_model.train(train_data, 5);
+	// mnist_model.train_pipelined(train_images, train_labels, 5, 32);
 
-	// mnist_model.test(test_images, test_labels, 32);
+	// mnist_model.learning_rate = 0.0001f;
+	// mnist_model.train_pipelined(train_images, train_labels, 5, 32);
+
+	auto tok = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	std::cout << ms_double.count() << "ms \n";
+
+	mnist_model.test(test_images, test_labels, 32);
 
 	return 0;
 }
