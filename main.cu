@@ -488,6 +488,18 @@ activation relu(relu_kernel, relu_derivative);
 activation softmax(softmax_kernel, relu_derivative);
 // activation sigmoid(sigmoid_kernel, sigmoid_derivative);
 
+dim3 get_grids(size_t x_dim, size_t y_dim)
+{
+	return dim3((x_dim > 40) ? x_dim / 20 + 1 : 2, (y_dim > 40) ? y_dim / 20 + 1 : 2);
+}
+
+dim3 get_threads(size_t x_dim, size_t y_dim)
+{
+	return dim3(
+		x_dim / ((x_dim > 40) ? x_dim / 20 + 1 : 2) + 1, 
+		y_dim / ((y_dim > 40) ? y_dim / 20 + 1 : 2) + 1);
+}
+
 class layer
 {
 public:
@@ -505,14 +517,39 @@ public:
 	{}
 	void forward(c_matrix& input, cudaStream_t s)
 	{
-		matmulmat<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2), 0, s>>>(input, weights, pre_activations);
-		act.f<<<dim3(2, 2), dim3(input.height / 2 + 1, units / 2), 0, s>>>(pre_activations, activations);
+		matmulmat<<<
+			get_grids(input.height, units),
+			get_threads(input.height, units),
+			0, 
+			s>>>
+			(input, weights, pre_activations);
+		act.f<<<
+			get_grids(input.height, units),
+			get_threads(input.height, units), 
+			0, 
+			s>>>
+			(pre_activations, activations);
 	}
 	void backward(c_matrix& nlw, c_matrix& nle, cudaStream_t s)
 	{
-		matmulmatT<<<dim3(2, 2), dim3(nle.height / 2 + 1, units / 2), 0, s>>>(nle, nlw, errors);
-		act.d<<<dim3(2, 2), dim3(pre_activations.height / 2 + 1, units / 2), 0, s>>>(pre_activations, pre_activations);
-		elementwisemul<<<dim3(2, 2), dim3(errors.height / 2 + 1, units / 2), 0, s>>>(errors, pre_activations, errors);
+		matmulmatT<<<
+			get_grids(nle.height, units), 
+			get_threads(nle.height, units), 
+			0, 
+			s>>>
+			(nle, nlw, errors);
+		act.d<<<
+			get_grids(pre_activations.height, units), 
+			get_threads(pre_activations.height, units), 
+			0, 
+			s>>>
+			(pre_activations, pre_activations);
+		elementwisemul<<<
+			get_grids(errors.height, units), 
+			get_threads(errors.height, units), 
+			0, 
+			s>>>
+			(errors, pre_activations, errors);
 	}
 	void set_input_lenght(size_t length)
 	{
@@ -553,18 +590,6 @@ out_err_fptr get_out_err_func(
 	}else{
 		return nullptr;
 	}
-}
-
-dim3 get_grids(size_t x_dim, size_t y_dim)
-{
-	return dim3((x_dim > 40) ? x_dim / 20 + 1 : 2, (y_dim > 40) ? y_dim / 20 + 1 : 2);
-}
-
-dim3 get_threads(size_t x_dim, size_t y_dim)
-{
-	return dim3(
-		x_dim / ((x_dim > 40) ? x_dim / 20 + 1 : 2) + 1, 
-		y_dim / ((y_dim > 40) ? y_dim / 20 + 1 : 2) + 1);
 }
 
 class model
@@ -663,10 +688,14 @@ public:
 	}
 	void backprop(size_t batch_size, bool use_alt)
 	{
-		out_err_func<<<dim3(2, 2), dim3(batch_size / 2 + 1, layers.back().units / 2), 0, kernel_exec_s>>>(
-			layers.back().activations, 
-			layers.back().errors, 
-			(use_alt ? d_correct_labels_alt : d_correct_labels));
+		out_err_func<<<
+		get_grids(batch_size, layers.back().units), 
+		get_threads(batch_size, layers.back().units), 
+		0, 
+		kernel_exec_s>>>
+		(layers.back().activations, 
+		layers.back().errors, 
+		(use_alt ? d_correct_labels_alt : d_correct_labels));
 		for (std::vector<layer>::iterator l = layers.end() - 2; l != layers.begin(); --l)
 		{
 			l->backward((l + 1)->weights, (l + 1)->errors, kernel_exec_s);
@@ -675,22 +704,22 @@ public:
 	void weight_update(bool use_alt)
 	{
 		c_matrix& input_activations = (use_alt ? layers[0].activations_alt : layers[0].activations);
-		int dim = (layers[1].weights.height > 50) ? 20 : 2;
+		// int dim = (layers[1].weights.height > 50) ? 20 : 2;
 		weight_update_kernel<<<
-			dim3(dim, 2),
-			dim3(layers[1].weights.height/dim + 1, layers[1].weights.width/2 + 1),
+			get_grids(layers[1].weights.height, layers[1].weights.width),
+			get_threads(layers[1].weights.height, layers[1].weights.width),
 			0, 
 			kernel_exec_s>>>
-		(layers[1].errors, input_activations, layers[1].weights, learning_rate);
+			(layers[1].errors, input_activations, layers[1].weights, learning_rate);
 		for (std::vector<layer>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
 		{
-			int var = (l->weights.height > 50) ? 20 : 2;
+			// int var = (l->weights.height > 50) ? 20 : 2;
 			weight_update_kernel<<<
-				dim3(var, 2),
-				dim3(l->weights.height/var + 1, l->weights.width/2 + 1),
+				get_grids(l->weights.height, l->weights.width),
+				get_threads(l->weights.height, l->weights.width),
 				0, 
 				kernel_exec_s>>>
-			(l->errors, (l - 1)->activations, l->weights, learning_rate); 
+				(l->errors, (l - 1)->activations, l->weights, learning_rate); 
 		}
 	}
 	void single_train_timed(float* image, int* label, size_t batch_size)
@@ -839,8 +868,8 @@ int main()
 
 	model mnist_model(cross_entropy, 0.05f);
 	mnist_model.add(layer(784, relu, true));
-	mnist_model.add(layer(16));
-	mnist_model.add(layer(16));
+	mnist_model.add(layer(128));
+	mnist_model.add(layer(128));
 	mnist_model.add(layer(10, softmax));
 
 	mnist_model.finalize(32);
