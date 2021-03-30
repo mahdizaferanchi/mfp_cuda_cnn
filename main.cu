@@ -306,7 +306,7 @@ __global__ void matmulmat(c_matrix left, c_matrix right, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	if (i < left.height)
+	if (i < left.height && j < right.width)
 	{
 		float result = 0.0f;
 		for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
@@ -321,7 +321,7 @@ __global__ void matmulmatT(c_matrix left, c_matrix right, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	if (i < left.height)
+	if (i < left.height && j < right.height)
 	{
 		float result = 0.0f;
 		for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
@@ -343,7 +343,7 @@ __global__ void relu_kernel(c_matrix in, c_matrix out)
 	// }else{
 	// 	out.at(i, j) = in.at(i, j);
 	// }
-	if (i < in.height)
+	if (i < in.height && j < in.width)
 		*out.at(i, j) = (*in.at(i, j) < 0) ? 0 : *in.at(i, j);
 }
 
@@ -370,7 +370,7 @@ __global__ void elementwisemul(c_matrix left, c_matrix right, c_matrix out)
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
 
-	if (i < left.height)
+	if (i < left.height && j < left.width)
 		*out.at(i, j) = *left.at(i, j) * (*right.at(i, j));
 }
 
@@ -387,7 +387,7 @@ __global__ void relu_derivative(c_matrix in, c_matrix out)
 	// 		output[i] = 1;
 	// 	}
 	// }
-	if (i < in.height)
+	if (i < in.height && j < in.width)
 		*out.at(i, j) = (*in.at(i, j) < 0.0f) ? 0.0f : 1.0f;
 }
 
@@ -395,7 +395,7 @@ __global__ void softmax_kernel(c_matrix in, c_matrix out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	if (i < in.height)
+	if (i < in.height && j < in.width)
 	{
 		float sum = 0;
 		for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
@@ -425,7 +425,7 @@ __global__ void sigmoid_square_error(c_matrix in, c_matrix out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	if (i < in.height)
+	if (i < in.height && j < in.width)
 	{
 		if (i == targets[j])
 		{
@@ -553,6 +553,18 @@ out_err_fptr get_out_err_func(
 	}else{
 		return nullptr;
 	}
+}
+
+dim3 get_grids(size_t x_dim, size_t y_dim)
+{
+	return dim3((x_dim > 40) ? x_dim / 20 + 1 : 2, (y_dim > 40) ? y_dim / 20 + 1 : 2);
+}
+
+dim3 get_threads(size_t x_dim, size_t y_dim)
+{
+	return dim3(
+		x_dim / ((x_dim > 40) ? x_dim / 20 + 1 : 2) + 1, 
+		y_dim / ((y_dim > 40) ? y_dim / 20 + 1 : 2) + 1);
 }
 
 class model
