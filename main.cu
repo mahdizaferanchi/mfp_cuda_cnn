@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <chrono>
 #include <string>
+#include <array>
+#include <functional>
 
 
 template <class T, size_t S, size_t item_length>
@@ -280,11 +282,49 @@ public:
 			std::cout << result[i * width + width - 1] << ", ";
 		}
 		std::cout << "] \n";
-
 	}
 	__device__ inline float* at(int row, int col)
 	{
 		return (float*)((char*)d_copy + row * pitch) + col;
+	}
+};
+
+class tensor_4d : public c_matrix
+{
+public:
+	size_t height;
+	size_t width;
+	size_t depth;
+	size_t fourth;
+	tensor_4d(size_t p_height, size_t p_width, size_t p_depth=1, size_t p_fourth=1, 
+		bool one_initialization=false, float initial_max=0.5):
+	c_matrix{p_height * p_depth * p_fourth, p_width, one_initialization, initial_max},
+	height {p_height}, width {p_width}, depth {p_depth}, fourth {p_fourth}
+	{}
+	friend std::ostream& operator<<(std::ostream& os, tensor_4d& mat)
+	{
+		float* result = mat.read();
+		for (int f = 0; f < mat.fourth; ++f)
+		{
+			os << "block " << f << '\n';
+			for (int d = 0; d < mat.depth; ++d)
+			{
+				os << "depth " << d << '\n';
+				for (int i = 0; i < mat.height; ++i)
+				{
+					for (int j = 0; j < mat.width; ++j)
+					{
+						os << result[f * mat.depth * mat.height + d * mat.height + i * mat.width + j] << " ";
+					}
+					os << '\n';
+				}	
+			}
+		}
+		return os;
+	}
+	__device__ inline float* at(int row, int col, int page=1, int block=1)
+	{
+		return (float*)((char*)d_copy + (block * height * depth + page * height + row) * pitch) + col;
 	}
 };
 
@@ -302,7 +342,7 @@ __global__ void matmulvec(float* mat, float* vec, int height, int width, float* 
 	}
 }
 
-__global__ void matmulmat(c_matrix left, c_matrix right, c_matrix out)
+__global__ void matmulmat(tensor_4d left, tensor_4d right, tensor_4d out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -317,7 +357,7 @@ __global__ void matmulmat(c_matrix left, c_matrix right, c_matrix out)
 	}
 }
 
-__global__ void matmulmatT(c_matrix left, c_matrix right, c_matrix out)
+__global__ void matmulmatT(tensor_4d left, tensor_4d right, tensor_4d out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -332,7 +372,7 @@ __global__ void matmulmatT(c_matrix left, c_matrix right, c_matrix out)
 	}
 }
 
-__global__ void relu_kernel(c_matrix in, c_matrix out)
+__global__ void relu_kernel(tensor_4d in, tensor_4d out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -365,7 +405,7 @@ __global__ void sigmoid_derivative(float* input, float* output, size_t size)
 	}
 }
 
-__global__ void elementwisemul(c_matrix left, c_matrix right, c_matrix out)
+__global__ void elementwisemul(tensor_4d left, tensor_4d right, tensor_4d out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -374,7 +414,7 @@ __global__ void elementwisemul(c_matrix left, c_matrix right, c_matrix out)
 		*out.at(i, j) = *left.at(i, j) * (*right.at(i, j));
 }
 
-__global__ void relu_derivative(c_matrix in, c_matrix out)
+__global__ void relu_derivative(tensor_4d in, tensor_4d out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -391,7 +431,7 @@ __global__ void relu_derivative(c_matrix in, c_matrix out)
 		*out.at(i, j) = (*in.at(i, j) < 0.0f) ? 0.0f : 1.0f;
 }
 
-__global__ void softmax_kernel(c_matrix in, c_matrix out)
+__global__ void softmax_kernel(tensor_4d in, tensor_4d out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -406,7 +446,7 @@ __global__ void softmax_kernel(c_matrix in, c_matrix out)
 	}
 }
 
-__global__ void softmax_crossen_error(c_matrix in, c_matrix out, int* targets)
+__global__ void softmax_crossen_error(tensor_4d in, tensor_4d out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -421,7 +461,7 @@ __global__ void softmax_crossen_error(c_matrix in, c_matrix out, int* targets)
 	}
 }
 
-__global__ void sigmoid_square_error(c_matrix in, c_matrix out, int* targets)
+__global__ void sigmoid_square_error(tensor_4d in, tensor_4d out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -446,7 +486,7 @@ __global__ void mean_square_error(float* input, float* output, size_t size)
 	// int i = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
-__global__ void weight_update_kernel(c_matrix errors, c_matrix last_activations, c_matrix weights, float learning_rate)
+__global__ void weight_update_kernel(tensor_4d errors, tensor_4d last_activations, tensor_4d weights, float learning_rate)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -461,7 +501,7 @@ __global__ void weight_update_kernel(c_matrix errors, c_matrix last_activations,
 	}
 }
 
-__global__ void update_correct_labels(c_matrix acts, int* labels, int* correct_predictions)
+__global__ void update_correct_labels(tensor_4d acts, int* labels, int* correct_predictions)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int maxIdx = 0;
@@ -477,9 +517,9 @@ __global__ void update_correct_labels(c_matrix acts, int* labels, int* correct_p
 class activation
 {
 public:
-	void (*f)(c_matrix, c_matrix);
-	void (*d)(c_matrix, c_matrix);
-	activation(void (*p_f)(c_matrix, c_matrix), void (*p_d)(c_matrix, c_matrix)):
+	void (*f)(tensor_4d, tensor_4d);
+	void (*d)(tensor_4d, tensor_4d);
+	activation(void (*p_f)(tensor_4d, tensor_4d), void (*p_d)(tensor_4d, tensor_4d)):
 	f{p_f}, d{p_d}
 	{} 
 };
@@ -500,22 +540,45 @@ dim3 get_threads(size_t x_dim, size_t y_dim)
 		y_dim / ((y_dim > 40) ? y_dim / 20 + 1 : 2) + 1);
 }
 
-class layer
+class Layer
+{
+public:
+	tensor_4d activations {1, 1};
+	tensor_4d activations_alt {1, 1};
+	tensor_4d pre_activations {1, 1};
+	tensor_4d errors {1, 1};
+	tensor_4d weights {1, 1};
+	activation act;
+	Layer(activation act_p):
+	act {act_p}
+	{}
+	virtual void forward(tensor_4d& input, cudaStream_t s) = 0;
+	virtual void backward(tensor_4d& nlw, tensor_4d& nle, cudaStream_t s) = 0;
+	virtual void set_input_props(const Layer& lla) = 0;
+	virtual void initialize_with_batch_size(size_t batch_size, const Layer& ll) = 0;
+	virtual size_t get_output_size() const = 0;
+	virtual size_t get_depth() const = 0;
+	virtual size_t get_height() const = 0;
+	virtual size_t get_width() const = 0;
+};
+
+
+class Regular : public Layer
 {
 public:
 	size_t units;
 	size_t input_length;
-	c_matrix activations {1, 1};
-	c_matrix activations_alt {1, 1};
-	c_matrix pre_activations {1, 1};
-	c_matrix errors {1, 1};
-	c_matrix weights {1, 1};
-	activation act;
+	// tensor_4d activations {1, 1};
+	// tensor_4d activations_alt {1, 1};
+	// tensor_4d pre_activations {1, 1};
+	// tensor_4d errors {1, 1};
+	// tensor_4d weights {1, 1};
+	// activation act;
 	bool double_activations;
-	layer(size_t p_units=16, activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
-	units{p_units}, act{act_p}, input_length{p_input_length}, double_activations{p_double_activations}
+	Regular(size_t p_units=16, activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
+	Layer{act_p}, units{p_units}, input_length{p_input_length}, double_activations{p_double_activations}
 	{}
-	void forward(c_matrix& input, cudaStream_t s)
+	void forward(tensor_4d& input, cudaStream_t s)
 	{
 		matmulmat<<<
 			get_grids(input.height, units),
@@ -530,7 +593,7 @@ public:
 			s>>>
 			(pre_activations, activations);
 	}
-	void backward(c_matrix& nlw, c_matrix& nle, cudaStream_t s)
+	void backward(tensor_4d& nlw, tensor_4d& nle, cudaStream_t s)
 	{
 		matmulmatT<<<
 			get_grids(nle.height, units), 
@@ -551,26 +614,91 @@ public:
 			s>>>
 			(errors, pre_activations, errors);
 	}
-	void set_input_lenght(size_t length)
+	void set_input_props(const Layer& ll)
 	{
-		input_length = length;
-		weights = c_matrix(input_length, units);
+		input_length = ll.get_output_size();
+		weights = tensor_4d(input_length, units);
 	}
-	void initialize_with_batch_size(size_t batch_size)
+	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
-		activations = c_matrix(batch_size, units + 1, true);
-		pre_activations = c_matrix(batch_size, units, true);
-		errors = c_matrix(batch_size, units, true);
+		activations = tensor_4d(batch_size, units + 1, true);
+		pre_activations = tensor_4d(batch_size, units, true);
+		errors = tensor_4d(batch_size, units, true);
 		if (double_activations)
-			activations_alt = c_matrix(batch_size, units + 1, true);
+			activations_alt = tensor_4d(batch_size, units + 1, true);
+	}
+	size_t get_output_size() const
+	{
+		return units + 1;
+	}
+	size_t get_depth() const
+	{
+		return 1;
+	}
+	size_t get_height() const
+	{
+		return activations.height;
+	}
+	size_t get_width() const
+	{
+		return activations.width;
 	}
 };
 
-typedef void (*out_err_fptr)(c_matrix, c_matrix, int*);
+class Convolutional : public Layer
+{
+public:
+	size_t filter_quantity;
+	std::array<size_t, 2> filter_dims;
+	bool same_padding {true};
+	// tensor_4d activations {1, 1, 1, 1};
+	// tensor_4d pre_activations {1, 1, 1, 1};
+	// tensor_4d errors {1, 1, 1, 1};
+	// tensor_4d weights {1, 1, 1, 1};
+	// activation act;
+	Convolutional(size_t p_filter_quantity, std::array<size_t, 2> p_filter_dims,
+		activation act_p=relu, bool p_same_padding=true):
+	Layer{act_p}, filter_quantity {p_filter_quantity}, same_padding {p_same_padding},
+	filter_dims {p_filter_dims}
+	{}
+	void set_input_props(const Layer& ll)
+	{
+		// Convolutional& lc = static_cast<Convolutional&>(ll);
+		weights = tensor_4d(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
+	}
+	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
+	{
+		// Convolutional& lc = static_cast<Convolutional&>(ll);
+		activations = tensor_4d(
+			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
+		pre_activations = tensor_4d(
+			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
+		errors = tensor_4d(
+			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
+	}
+	size_t get_output_size() const
+	{
+		return activations.height * activations.width * activations.depth * activations.fourth;
+	}
+	size_t get_depth() const
+	{
+		return weights.depth;
+	}
+	size_t get_height() const
+	{
+		return weights.height;
+	}
+	size_t get_width() const
+	{
+		return weights.width;
+	}
+};
+
+typedef void (*out_err_fptr)(tensor_4d, tensor_4d, int*);
 
 out_err_fptr get_out_err_func(
 	void (*out_loss)(float*, float*, size_t),
-	void (*out_act)(c_matrix, c_matrix))
+	void (*out_act)(tensor_4d, tensor_4d))
 {
 	if (out_loss == cross_entropy)
 	{
@@ -595,11 +723,11 @@ out_err_fptr get_out_err_func(
 class model
 {
 public:
-	std::vector<layer> layers {};
+	std::vector<std::reference_wrapper<Layer>> layers {};
 	int* d_correct_labels {};
 	int* d_correct_labels_alt {};
 	void (*loss_func)(float*, float*, size_t);
-	void (*out_err_func)(c_matrix, c_matrix, int*);
+	void (*out_err_func)(tensor_4d, tensor_4d, int*);
 	bool final {false};
 	float learning_rate;
 	int* d_correct_predictions {};
@@ -626,12 +754,16 @@ public:
 	}
 	bool finalize(size_t batch_size)
 	{
-		if (get_out_err_func(loss_func, layers.back().act.f))
+		if (get_out_err_func(loss_func, layers.back().get().act.f))
 		{
-			out_err_func = get_out_err_func(loss_func, layers.back().act.f);
-			for (int loopIdx = 0; loopIdx < layers.size(); ++loopIdx)
+			out_err_func = get_out_err_func(loss_func, layers.back().get().act.f);
+			// for (int loopIdx = 0; loopIdx < layers.size(); ++loopIdx)
+			// {
+			// 	layers[loopIdx].initialize_with_batch_size(batch_size);	
+			// }
+			for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin(); l != layers.end(); ++l)
 			{
-				layers[loopIdx].initialize_with_batch_size(batch_size);	
+				l->get().initialize_with_batch_size(batch_size, l == layers.begin() ? l->get() : (l - 1)->get());
 			}
 			cudaMalloc((void**) &d_correct_labels, sizeof(int) * batch_size);
 			cudaMalloc((void**) &d_correct_labels_alt, sizeof(int) * batch_size);
@@ -640,11 +772,11 @@ public:
 		}
 		return false;
 	}
-	void add(layer l)
+	void add(Layer& l)
 	{
 		if(!layers.empty())
 		{
-			l.set_input_lenght(layers.back().units + 1);
+			l.set_input_props(layers.back().get());
 			layers.push_back(l);
 		}else{
 			layers.push_back(l);
@@ -655,11 +787,11 @@ public:
 
 		// auto t0 = std::chrono::high_resolution_clock::now();
 		cudaMemcpy2DAsync(
-			(use_alt ? layers.front().activations_alt.d_copy : layers.front().activations.d_copy),
-			(use_alt ? layers.front().activations_alt.pitch : layers.front().activations.pitch),
+			(use_alt ? layers.front().get().activations_alt.d_copy : layers.front().get().activations.d_copy),
+			(use_alt ? layers.front().get().activations_alt.pitch : layers.front().get().activations.pitch),
 			input_data, 
-			sizeof(float) * (layers.front().units + 1),
-			sizeof(float) * (layers.front().units + 1),
+			sizeof(float) * (layers.front().get().get_output_size()),
+			sizeof(float) * (layers.front().get().get_output_size()),
 			batch_size,
 			cudaMemcpyHostToDevice,
 			data_transfer_s);
@@ -675,52 +807,52 @@ public:
 	}
 	void forward_pass(size_t batch_size, bool use_alt)
 	{
-		c_matrix temp_results = (use_alt ? layers.front().activations_alt : layers.front().activations);
-		for (std::vector<layer>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
+		tensor_4d temp_results = (use_alt ? layers.front().get().activations_alt : layers.front().get().activations);
+		for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
 		{
-			l->forward(temp_results, kernel_exec_s);
-			temp_results = l->activations;
+			l->get().forward(temp_results, kernel_exec_s);
+			temp_results = l->get().activations;
 		}
 		update_correct_labels<<<1, batch_size, 0, kernel_exec_s>>>(
-			layers.back().activations, 
+			layers.back().get().activations, 
 			(use_alt ? d_correct_labels_alt : d_correct_labels), 
 			d_correct_predictions);
 	}
 	void backprop(size_t batch_size, bool use_alt)
 	{
 		out_err_func<<<
-		get_grids(batch_size, layers.back().units), 
-		get_threads(batch_size, layers.back().units), 
+		get_grids(batch_size, layers.back().get().get_output_size() - 1), 
+		get_threads(batch_size, layers.back().get().get_output_size() - 1), 
 		0, 
 		kernel_exec_s>>>
-		(layers.back().activations, 
-		layers.back().errors, 
+		(layers.back().get().activations, 
+		layers.back().get().errors, 
 		(use_alt ? d_correct_labels_alt : d_correct_labels));
-		for (std::vector<layer>::iterator l = layers.end() - 2; l != layers.begin(); --l)
+		for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.end() - 2; l != layers.begin(); --l)
 		{
-			l->backward((l + 1)->weights, (l + 1)->errors, kernel_exec_s);
+			l->get().backward((l + 1)->get().weights, (l + 1)->get().errors, kernel_exec_s);
 		}
 	}
 	void weight_update(bool use_alt)
 	{
-		c_matrix& input_activations = (use_alt ? layers[0].activations_alt : layers[0].activations);
-		// int dim = (layers[1].weights.height > 50) ? 20 : 2;
-		weight_update_kernel<<<
-			get_grids(layers[1].weights.height, layers[1].weights.width),
-			get_threads(layers[1].weights.height, layers[1].weights.width),
-			0, 
-			kernel_exec_s>>>
-			(layers[1].errors, input_activations, layers[1].weights, learning_rate);
-		for (std::vector<layer>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
-		{
-			// int var = (l->weights.height > 50) ? 20 : 2;
-			weight_update_kernel<<<
-				get_grids(l->weights.height, l->weights.width),
-				get_threads(l->weights.height, l->weights.width),
-				0, 
-				kernel_exec_s>>>
-				(l->errors, (l - 1)->activations, l->weights, learning_rate); 
-		}
+		// tensor_4d& input_activations = (use_alt ? layers[0].activations_alt : layers[0].activations);
+		// // int dim = (layers[1].weights.height > 50) ? 20 : 2;
+		// weight_update_kernel<<<
+		// 	get_grids(layers[1].weights.height, layers[1].weights.width),
+		// 	get_threads(layers[1].weights.height, layers[1].weights.width),
+		// 	0, 
+		// 	kernel_exec_s>>>
+		// 	(layers[1].errors, input_activations, layers[1].weights, learning_rate);
+		// for (std::vector<Layer>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
+		// {
+		// 	// int var = (l->weights.height > 50) ? 20 : 2;
+		// 	weight_update_kernel<<<
+		// 		get_grids(l->weights.height, l->weights.width),
+		// 		get_threads(l->weights.height, l->weights.width),
+		// 		0, 
+		// 		kernel_exec_s>>>
+		// 		(l->errors, (l - 1)->activations, l->weights, learning_rate); 
+		// }
 	}
 	void single_train_timed(float* image, int* label, size_t batch_size)
 	{
@@ -850,47 +982,41 @@ int main()
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	// auto test_images = mnist_parse_image("sample_data/mnist_test.csv");
-	// auto test_labels = mnist_parse_label("sample_data/mnist_test.csv");
-	// auto train_images = mnist_parse_image("sample_data/mnist_train_small.csv");
-	// auto train_labels = mnist_parse_label("sample_data/mnist_train_small.csv");
+	tensor_4d sample_tensor {2, 3, 3, 2};
+	std::cout << sample_tensor << '\n';
 
-	pinned_data<float, 10000, 785> test_images("sample_data/mnist_test.csv");
-	pinned_data<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-	pinned_data<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
-	pinned_data<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
+	// pinned_data<float, 10000, 785> test_images("sample_data/mnist_test.csv");
+	// pinned_data<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
+	// pinned_data<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
+	// pinned_data<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
-	// model mnist_model(mean_square_error, 0.5f);
-	// mnist_model.add(layer(784));
-	// mnist_model.add(layer(16, sigmoid));
-	// mnist_model.add(layer(16, sigmoid));
-	// mnist_model.add(layer(10, sigmoid));
+	Regular layer1 = Regular(784, relu, true);
+	Regular layer2 = Regular(32);
+	Regular layer3 = Regular(32);
+	Regular layer4 = Regular(10, softmax);
 
 	model mnist_model(cross_entropy, 0.05f);
-	mnist_model.add(layer(784, relu, true));
-	mnist_model.add(layer(128));
-	mnist_model.add(layer(128));
-	mnist_model.add(layer(10, softmax));
+	mnist_model.add(layer1);
+	mnist_model.add(layer2);
+	mnist_model.add(layer3);
+	mnist_model.add(layer4);
 
 	mnist_model.finalize(32);
-	// mnist_model.train_pipelined(train_images, train_labels, 10, 32);
-	// mnist_model.single_train_timed(train_images[0], train_labels[0], 32);
 
-	auto tik = std::chrono::high_resolution_clock::now();
+	// auto tik = std::chrono::high_resolution_clock::now();
+	// mnist_model.train_pipelined(train_images, train_labels, 7, 32);
 
-	mnist_model.train_pipelined(train_images, train_labels, 7, 32);
+	// // mnist_model.learning_rate = 0.001f;
+	// // mnist_model.train_pipelined(train_images, train_labels, 5, 32);
 
-	// mnist_model.learning_rate = 0.001f;
-	// mnist_model.train_pipelined(train_images, train_labels, 5, 32);
+	// // mnist_model.learning_rate = 0.0001f;
+	// // mnist_model.train_pipelined(train_images, train_labels, 5, 32);
 
-	// mnist_model.learning_rate = 0.0001f;
-	// mnist_model.train_pipelined(train_images, train_labels, 5, 32);
+	// auto tok = std::chrono::high_resolution_clock::now();
+	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	// std::cout << ms_double.count() << "ms \n";
 
-	auto tok = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	std::cout << ms_double.count() << "ms \n";
-
-	mnist_model.test(test_images, test_labels, 32);
+	// mnist_model.test(test_images, test_labels, 32);
 
 	return 0;
 }
