@@ -982,13 +982,13 @@ int main()
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	tensor_4d sample_tensor {2, 3, 3, 2};
-	std::cout << sample_tensor << '\n';
+	// tensor_4d sample_tensor {2, 3, 3, 2};
+	// std::cout << sample_tensor << '\n';
 
-	// pinned_data<float, 10000, 785> test_images("sample_data/mnist_test.csv");
-	// pinned_data<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-	// pinned_data<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
-	// pinned_data<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
+	pinned_data<float, 10000, 785> test_images("sample_data/mnist_test.csv");
+	pinned_data<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
+	pinned_data<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
+	pinned_data<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
 	Regular layer1 = Regular(784, relu, true);
 	Regular layer2 = Regular(32);
@@ -1016,7 +1016,7 @@ int main()
 	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
 	// std::cout << ms_double.count() << "ms \n";
 
-	// mnist_model.test(test_images, test_labels, 32);
+	mnist_model.test(test_images, test_labels, 32);
 
 	return 0;
 }
