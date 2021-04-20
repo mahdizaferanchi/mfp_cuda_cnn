@@ -977,8 +977,27 @@ public:
 	}
 };
 
+__global__ void test(int a, int* b)
+{
+	*b = a + 1;
+}
+void testCuda()
+{
+	int* dp;
+	int hp;
+	cudaMalloc((void**) &dp, sizeof(int));
+	test<<<1, 1>>>(1, dp);
+	cudaMemcpy(&hp, dp, sizeof(int), cudaMemcpyDeviceToHost);
+	if(hp != 2)
+	{
+		std::cout << "Cuda Not Working. Factory Reset Runtime. \n";
+	}
+}
+
 int main()
 {
+	testCuda();
+
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
@@ -1004,7 +1023,7 @@ int main()
 	mnist_model.finalize(32);
 
 	// auto tik = std::chrono::high_resolution_clock::now();
-	// mnist_model.train_pipelined(train_images, train_labels, 7, 32);
+	mnist_model.train_pipelined(train_images, train_labels, 7, 32);
 
 	// // mnist_model.learning_rate = 0.001f;
 	// // mnist_model.train_pipelined(train_images, train_labels, 5, 32);
