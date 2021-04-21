@@ -322,7 +322,7 @@ public:
 		}
 		return os;
 	}
-	__device__ inline float* at(int row, int col, int page=1, int block=1)
+	__device__ inline float* at(int row, int col, int page=0, int block=0)
 	{
 		return (float*)((char*)d_copy + (block * height * depth + page * height + row) * pitch) + col;
 	}
@@ -621,11 +621,11 @@ public:
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
-		activations = tensor_4d(batch_size, units + 1, true);
-		pre_activations = tensor_4d(batch_size, units, true);
-		errors = tensor_4d(batch_size, units, true);
+		activations = tensor_4d(batch_size, units + 1, 1, 1, true);
+		pre_activations = tensor_4d(batch_size, units, 1, 1, true);
+		errors = tensor_4d(batch_size, units, 1, 1, true);
 		if (double_activations)
-			activations_alt = tensor_4d(batch_size, units + 1, true);
+			activations_alt = tensor_4d(batch_size, units + 1, 1, 1, true);
 	}
 	size_t get_output_size() const
 	{
@@ -757,10 +757,6 @@ public:
 		if (get_out_err_func(loss_func, layers.back().get().act.f))
 		{
 			out_err_func = get_out_err_func(loss_func, layers.back().get().act.f);
-			// for (int loopIdx = 0; loopIdx < layers.size(); ++loopIdx)
-			// {
-			// 	layers[loopIdx].initialize_with_batch_size(batch_size);	
-			// }
 			for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin(); l != layers.end(); ++l)
 			{
 				l->get().initialize_with_batch_size(batch_size, l == layers.begin() ? l->get() : (l - 1)->get());
@@ -784,8 +780,6 @@ public:
 	}
 	void move_batch(float* input_data, int* targets, size_t batch_size, bool use_alt)
 	{
-
-		// auto t0 = std::chrono::high_resolution_clock::now();
 		cudaMemcpy2DAsync(
 			(use_alt ? layers.front().get().activations_alt.d_copy : layers.front().get().activations.d_copy),
 			(use_alt ? layers.front().get().activations_alt.pitch : layers.front().get().activations.pitch),
@@ -795,9 +789,6 @@ public:
 			batch_size,
 			cudaMemcpyHostToDevice,
 			data_transfer_s);
-		// auto t1 = std::chrono::high_resolution_clock::now();
-		// std::chrono::nanoseconds dt = t1 - t0;
-		// std::cout << dt.count() << '\n';
 		cudaMemcpyAsync(
 			(use_alt ? d_correct_labels_alt : d_correct_labels), 
 			targets, 
@@ -835,24 +826,24 @@ public:
 	}
 	void weight_update(bool use_alt)
 	{
-		// tensor_4d& input_activations = (use_alt ? layers[0].activations_alt : layers[0].activations);
-		// // int dim = (layers[1].weights.height > 50) ? 20 : 2;
-		// weight_update_kernel<<<
-		// 	get_grids(layers[1].weights.height, layers[1].weights.width),
-		// 	get_threads(layers[1].weights.height, layers[1].weights.width),
-		// 	0, 
-		// 	kernel_exec_s>>>
-		// 	(layers[1].errors, input_activations, layers[1].weights, learning_rate);
-		// for (std::vector<Layer>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
-		// {
-		// 	// int var = (l->weights.height > 50) ? 20 : 2;
-		// 	weight_update_kernel<<<
-		// 		get_grids(l->weights.height, l->weights.width),
-		// 		get_threads(l->weights.height, l->weights.width),
-		// 		0, 
-		// 		kernel_exec_s>>>
-		// 		(l->errors, (l - 1)->activations, l->weights, learning_rate); 
-		// }
+		tensor_4d& input_activations = (use_alt ? layers[0].get().activations_alt : layers[0].get().activations);
+		// int dim = (layers[1].weights.height > 50) ? 20 : 2;
+		weight_update_kernel<<<
+			get_grids(layers[1].get().weights.height, layers[1].get().weights.width),
+			get_threads(layers[1].get().weights.height, layers[1].get().weights.width),
+			0, 
+			kernel_exec_s>>>
+			(layers[1].get().errors, input_activations, layers[1].get().weights, learning_rate);
+		for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
+		{
+			// int var = (l->weights.height > 50) ? 20 : 2;
+			weight_update_kernel<<<
+				get_grids(l->get().weights.height, l->get().weights.width),
+				get_threads(l->get().weights.height, l->get().weights.width),
+				0, 
+				kernel_exec_s>>>
+				(l->get().errors, (l - 1)->get().activations, l->get().weights, learning_rate); 
+		}
 	}
 	void single_train_timed(float* image, int* label, size_t batch_size)
 	{
@@ -1001,17 +992,14 @@ int main()
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	// tensor_4d sample_tensor {2, 3, 3, 2};
-	// std::cout << sample_tensor << '\n';
-
 	pinned_data<float, 10000, 785> test_images("sample_data/mnist_test.csv");
 	pinned_data<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
 	pinned_data<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
 	pinned_data<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
 	Regular layer1 = Regular(784, relu, true);
-	Regular layer2 = Regular(32);
-	Regular layer3 = Regular(32);
+	Regular layer2 = Regular(128);
+	Regular layer3 = Regular(128);
 	Regular layer4 = Regular(10, softmax);
 
 	model mnist_model(cross_entropy, 0.05f);
@@ -1022,18 +1010,18 @@ int main()
 
 	mnist_model.finalize(32);
 
-	// auto tik = std::chrono::high_resolution_clock::now();
+	auto tik = std::chrono::high_resolution_clock::now();
 	mnist_model.train_pipelined(train_images, train_labels, 7, 32);
 
-	// // mnist_model.learning_rate = 0.001f;
-	// // mnist_model.train_pipelined(train_images, train_labels, 5, 32);
+	// mnist_model.learning_rate = 0.001f;
+	// mnist_model.train_pipelined(train_images, train_labels, 5, 32);
 
-	// // mnist_model.learning_rate = 0.0001f;
-	// // mnist_model.train_pipelined(train_images, train_labels, 5, 32);
+	// mnist_model.learning_rate = 0.0001f;
+	// mnist_model.train_pipelined(train_images, train_labels, 5, 32);
 
-	// auto tok = std::chrono::high_resolution_clock::now();
-	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	// std::cout << ms_double.count() << "ms \n";
+	auto tok = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	std::cout << ms_double.count() << "ms \n";
 
 	mnist_model.test(test_images, test_labels, 32);
 
