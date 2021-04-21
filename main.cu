@@ -12,13 +12,13 @@
 #include <functional>
 
 template <class T, size_t S, size_t item_length>
-class pinned_data
+class PinnedData
 {
 public:
 	T* beginning {};
 	T* end;
 	size_t size = S;
-	pinned_data(const std::string& file_name)
+	PinnedData(const std::string& file_name)
 	{
 		cudaMallocHost((void**) &beginning, sizeof(T) * size * item_length, 4);
 		end = beginning;
@@ -84,13 +84,13 @@ void fill_with_rand(float* arr, int size, float max=0.1f)
 	}
 }
 
-class c_vector
+class CustomVector
 {
 public:
 	size_t length;
 	float* h_copy;
 	float* d_copy{};
-	c_vector(size_t p_size, float initial_val=1):
+	CustomVector(size_t p_size, float initial_val=1):
 	length{p_size}
 	{
 		size_t float_size = sizeof(float);
@@ -104,7 +104,7 @@ public:
 		cudaMemcpy(h_copy, d_copy, sizeof(float) * length, cudaMemcpyDeviceToHost);
 		return h_copy;
 	}
-	friend std::ostream& operator<<(std::ostream& os, c_vector& vec)
+	friend std::ostream& operator<<(std::ostream& os, CustomVector& vec)
 	{
 		float* result = vec.read();
 		for (int i = 0; i < vec.length; ++i)
@@ -116,7 +116,7 @@ public:
 	}
 };
 
-class c_matrix
+class CustomMatrix
 {
 public:
 	size_t pitch;
@@ -124,7 +124,7 @@ public:
 	size_t width;
 	float* h_copy;
 	float* d_copy{};
-	c_matrix(size_t p_height, size_t p_width, bool one_initialization=false, float initial_max=0.5):
+	CustomMatrix(size_t p_height, size_t p_width, bool one_initialization=false, float initial_max=0.5):
 	height{p_height}, width{p_width}
 	{
 		size_t length = height * width;
@@ -152,7 +152,7 @@ public:
 			cudaMemcpyDeviceToHost);
 		return h_copy;
 	}
-	friend std::ostream& operator<<(std::ostream& os, c_matrix& mat)
+	friend std::ostream& operator<<(std::ostream& os, CustomMatrix& mat)
 	{
 		float* result = mat.read();
 		for (int i = 0; i < mat.height; ++i)
@@ -193,19 +193,19 @@ public:
 	}
 };
 
-class tensor_4d : public c_matrix
+class Tensor : public CustomMatrix
 {
 public:
 	size_t height;
 	size_t width;
 	size_t depth;
 	size_t fourth;
-	tensor_4d(size_t p_height, size_t p_width, size_t p_depth=1, size_t p_fourth=1, 
+	Tensor(size_t p_height, size_t p_width, size_t p_depth=1, size_t p_fourth=1, 
 		bool one_initialization=false, float initial_max=0.5):
-	c_matrix{p_height * p_depth * p_fourth, p_width, one_initialization, initial_max},
+	CustomMatrix{p_height * p_depth * p_fourth, p_width, one_initialization, initial_max},
 	height {p_height}, width {p_width}, depth {p_depth}, fourth {p_fourth}
 	{}
-	friend std::ostream& operator<<(std::ostream& os, tensor_4d& mat)
+	friend std::ostream& operator<<(std::ostream& os, Tensor& mat)
 	{
 		float* result = mat.read();
 		for (int f = 0; f < mat.fourth; ++f)
@@ -246,7 +246,7 @@ __global__ void matmulvec(float* mat, float* vec, int height, int width, float* 
 	}
 }
 
-__global__ void matmulmat(tensor_4d left, tensor_4d right, tensor_4d out)
+__global__ void matmulmat(Tensor left, Tensor right, Tensor out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -261,7 +261,7 @@ __global__ void matmulmat(tensor_4d left, tensor_4d right, tensor_4d out)
 	}
 }
 
-__global__ void matmulmatT(tensor_4d left, tensor_4d right, tensor_4d out)
+__global__ void matmulmatT(Tensor left, Tensor right, Tensor out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -276,7 +276,7 @@ __global__ void matmulmatT(tensor_4d left, tensor_4d right, tensor_4d out)
 	}
 }
 
-__global__ void relu_kernel(tensor_4d in, tensor_4d out)
+__global__ void relu_kernel(Tensor in, Tensor out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -303,7 +303,7 @@ __global__ void sigmoid_derivative(float* input, float* output, size_t size)
 	}
 }
 
-__global__ void elementwisemul(tensor_4d left, tensor_4d right, tensor_4d out)
+__global__ void elementwisemul(Tensor left, Tensor right, Tensor out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -312,7 +312,7 @@ __global__ void elementwisemul(tensor_4d left, tensor_4d right, tensor_4d out)
 		*out.at(i, j) = *left.at(i, j) * (*right.at(i, j));
 }
 
-__global__ void relu_derivative(tensor_4d in, tensor_4d out)
+__global__ void relu_derivative(Tensor in, Tensor out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -320,7 +320,7 @@ __global__ void relu_derivative(tensor_4d in, tensor_4d out)
 		*out.at(i, j) = (*in.at(i, j) < 0.0f) ? 0.0f : 1.0f;
 }
 
-__global__ void softmax_kernel(tensor_4d in, tensor_4d out)
+__global__ void softmax_kernel(Tensor in, Tensor out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -335,7 +335,7 @@ __global__ void softmax_kernel(tensor_4d in, tensor_4d out)
 	}
 }
 
-__global__ void softmax_crossen_error(tensor_4d in, tensor_4d out, int* targets)
+__global__ void softmax_crossen_error(Tensor in, Tensor out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -350,7 +350,7 @@ __global__ void softmax_crossen_error(tensor_4d in, tensor_4d out, int* targets)
 	}
 }
 
-__global__ void sigmoid_square_error(tensor_4d in, tensor_4d out, int* targets)
+__global__ void sigmoid_square_error(Tensor in, Tensor out, int* targets)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -375,7 +375,7 @@ __global__ void mean_square_error(float* input, float* output, size_t size)
 	// int i = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
-__global__ void weight_update_kernel(tensor_4d errors, tensor_4d last_activations, tensor_4d weights, float learning_rate)
+__global__ void weight_update_kernel(Tensor errors, Tensor last_activations, Tensor weights, float learning_rate)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -390,7 +390,7 @@ __global__ void weight_update_kernel(tensor_4d errors, tensor_4d last_activation
 	}
 }
 
-__global__ void update_correct_labels(tensor_4d acts, int* labels, int* correct_predictions)
+__global__ void update_correct_labels(Tensor acts, int* labels, int* correct_predictions)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int maxIdx = 0;
@@ -403,18 +403,18 @@ __global__ void update_correct_labels(tensor_4d acts, int* labels, int* correct_
 		atomicAdd(correct_predictions, 1);
 }
 
-class activation
+class Activation
 {
 public:
-	void (*f)(tensor_4d, tensor_4d);
-	void (*d)(tensor_4d, tensor_4d);
-	activation(void (*p_f)(tensor_4d, tensor_4d), void (*p_d)(tensor_4d, tensor_4d)):
+	void (*f)(Tensor, Tensor);
+	void (*d)(Tensor, Tensor);
+	Activation(void (*p_f)(Tensor, Tensor), void (*p_d)(Tensor, Tensor)):
 	f{p_f}, d{p_d}
 	{} 
 };
 
-activation relu(relu_kernel, relu_derivative);
-activation softmax(softmax_kernel, relu_derivative);
+Activation relu(relu_kernel, relu_derivative);
+Activation softmax(softmax_kernel, relu_derivative);
 // activation sigmoid(sigmoid_kernel, sigmoid_derivative);
 
 dim3 get_grids(size_t x_dim, size_t y_dim)
@@ -432,17 +432,17 @@ dim3 get_threads(size_t x_dim, size_t y_dim)
 class Layer
 {
 public:
-	tensor_4d activations {1, 1};
-	tensor_4d activations_alt {1, 1};
-	tensor_4d pre_activations {1, 1};
-	tensor_4d errors {1, 1};
-	tensor_4d weights {1, 1};
-	activation act;
-	Layer(activation act_p):
+	Tensor activations {1, 1};
+	Tensor activations_alt {1, 1};
+	Tensor pre_activations {1, 1};
+	Tensor errors {1, 1};
+	Tensor weights {1, 1};
+	Activation act;
+	Layer(Activation act_p):
 	act {act_p}
 	{}
-	virtual void forward(tensor_4d& input, cudaStream_t s) = 0;
-	virtual void backward(tensor_4d& nlw, tensor_4d& nle, cudaStream_t s) = 0;
+	virtual void forward(Tensor& input, cudaStream_t s) = 0;
+	virtual void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) = 0;
 	virtual void set_input_props(const Layer& lla) = 0;
 	virtual void initialize_with_batch_size(size_t batch_size, const Layer& ll) = 0;
 	virtual size_t get_output_size() const = 0;
@@ -458,10 +458,10 @@ public:
 	size_t units;
 	size_t input_length;
 	bool double_activations;
-	Regular(size_t p_units=16, activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
+	Regular(size_t p_units=16, Activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
 	Layer{act_p}, units{p_units}, input_length{p_input_length}, double_activations{p_double_activations}
 	{}
-	void forward(tensor_4d& input, cudaStream_t s)
+	void forward(Tensor& input, cudaStream_t s)
 	{
 		matmulmat<<<
 			get_grids(input.height, units),
@@ -476,7 +476,7 @@ public:
 			s>>>
 			(pre_activations, activations);
 	}
-	void backward(tensor_4d& nlw, tensor_4d& nle, cudaStream_t s)
+	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
 	{
 		matmulmatT<<<
 			get_grids(nle.height, units), 
@@ -500,15 +500,15 @@ public:
 	void set_input_props(const Layer& ll)
 	{
 		input_length = ll.get_output_size();
-		weights = tensor_4d(input_length, units);
+		weights = Tensor(input_length, units);
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
-		activations = tensor_4d(batch_size, units + 1, 1, 1, true);
-		pre_activations = tensor_4d(batch_size, units, 1, 1, true);
-		errors = tensor_4d(batch_size, units, 1, 1, true);
+		activations = Tensor(batch_size, units + 1, 1, 1, true);
+		pre_activations = Tensor(batch_size, units, 1, 1, true);
+		errors = Tensor(batch_size, units, 1, 1, true);
 		if (double_activations)
-			activations_alt = tensor_4d(batch_size, units + 1, 1, 1, true);
+			activations_alt = Tensor(batch_size, units + 1, 1, 1, true);
 	}
 	size_t get_output_size() const
 	{
@@ -535,21 +535,21 @@ public:
 	std::array<size_t, 2> filter_dims;
 	bool same_padding {true};
 	Convolutional(size_t p_filter_quantity, std::array<size_t, 2> p_filter_dims,
-		activation act_p=relu, bool p_same_padding=true):
+		Activation act_p=relu, bool p_same_padding=true):
 	Layer{act_p}, filter_quantity {p_filter_quantity}, same_padding {p_same_padding},
 	filter_dims {p_filter_dims}
 	{}
 	void set_input_props(const Layer& ll)
 	{
-		weights = tensor_4d(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
+		weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
-		activations = tensor_4d(
+		activations = Tensor(
 			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
-		pre_activations = tensor_4d(
+		pre_activations = Tensor(
 			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
-		errors = tensor_4d(
+		errors = Tensor(
 			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
 	}
 	size_t get_output_size() const
@@ -570,11 +570,11 @@ public:
 	}
 };
 
-typedef void (*out_err_fptr)(tensor_4d, tensor_4d, int*);
+typedef void (*out_err_fptr)(Tensor, Tensor, int*);
 
 out_err_fptr get_out_err_func(
 	void (*out_loss)(float*, float*, size_t),
-	void (*out_act)(tensor_4d, tensor_4d))
+	void (*out_act)(Tensor, Tensor))
 {
 	if (out_loss == cross_entropy)
 	{
@@ -596,21 +596,21 @@ out_err_fptr get_out_err_func(
 	}
 }
 
-class model
+class Model
 {
 public:
 	std::vector<std::reference_wrapper<Layer>> layers {};
 	int* d_correct_labels {};
 	int* d_correct_labels_alt {};
 	void (*loss_func)(float*, float*, size_t);
-	void (*out_err_func)(tensor_4d, tensor_4d, int*);
+	void (*out_err_func)(Tensor, Tensor, int*);
 	bool final {false};
 	float learning_rate;
 	int* d_correct_predictions {};
 	cudaStream_t data_transfer_s;
 	cudaStream_t kernel_exec_s;
 
-	model(void (*p_loss_func)(float*, float*, size_t), float p_learning_rate):
+	Model(void (*p_loss_func)(float*, float*, size_t), float p_learning_rate):
 	loss_func{p_loss_func}, learning_rate{p_learning_rate}
 	{
 		cudaMalloc((void **) &d_correct_predictions, sizeof(int));
@@ -674,7 +674,7 @@ public:
 	}
 	void forward_pass(size_t batch_size, bool use_alt)
 	{
-		tensor_4d temp_results = (use_alt ? layers.front().get().activations_alt : layers.front().get().activations);
+		Tensor temp_results = (use_alt ? layers.front().get().activations_alt : layers.front().get().activations);
 		for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
 		{
 			l->get().forward(temp_results, kernel_exec_s);
@@ -702,7 +702,7 @@ public:
 	}
 	void weight_update(bool use_alt)
 	{
-		tensor_4d& input_activations = (use_alt ? layers[0].get().activations_alt : layers[0].get().activations);
+		Tensor& input_activations = (use_alt ? layers[0].get().activations_alt : layers[0].get().activations);
 		weight_update_kernel<<<
 			get_grids(layers[1].get().weights.height, layers[1].get().weights.width),
 			get_threads(layers[1].get().weights.height, layers[1].get().weights.width),
@@ -759,8 +759,8 @@ public:
 	}
 	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
 	void train_sequential(
-		pinned_data<T1, S, item_length1> images,
-		pinned_data<T2, S, item_length2> labels,
+		PinnedData<T1, S, item_length1> images,
+		PinnedData<T2, S, item_length2> labels,
 		int epochs,
 		size_t batch_size)
 	{
@@ -787,8 +787,8 @@ public:
 	}
 	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
 	void train(
-		pinned_data<T1, S, item_length1> images,
-		pinned_data<T2, S, item_length2> labels,
+		PinnedData<T1, S, item_length1> images,
+		PinnedData<T2, S, item_length2> labels,
 		int epochs,
 		size_t batch_size)
 	{
@@ -827,8 +827,8 @@ public:
 	}
 	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
 	void test(
-		pinned_data<T1, S, item_length1> images,
-		pinned_data<T2, S, item_length2> labels,
+		PinnedData<T1, S, item_length1> images,
+		PinnedData<T2, S, item_length2> labels,
 		size_t batch_size)
 	{
 		int num_of_data = images.size;
@@ -865,17 +865,17 @@ int main()
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	pinned_data<float, 10000, 785> test_images("sample_data/mnist_test.csv");
-	pinned_data<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-	pinned_data<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
-	pinned_data<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
+	PinnedData<float, 10000, 785> test_images("sample_data/mnist_test.csv");
+	PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
+	PinnedData<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
+	PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
 	Regular layer1 = Regular(784, relu, true);
 	Regular layer2 = Regular(128);
 	Regular layer3 = Regular(128);
 	Regular layer4 = Regular(10, softmax);
 
-	model mnist_model(cross_entropy, 0.05f);
+	Model mnist_model(cross_entropy, 0.05f);
 	mnist_model.add(layer1);
 	mnist_model.add(layer2);
 	mnist_model.add(layer3);
