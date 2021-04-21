@@ -11,7 +11,6 @@
 #include <array>
 #include <functional>
 
-
 template <class T, size_t S, size_t item_length>
 class pinned_data
 {
@@ -68,101 +67,6 @@ public:
 	}
 };
 
-class mnist_data_point
-{
-public:
-	float image[784];
-	int label;
-	mnist_data_point(std::string& str)
-	{
-		std::stringstream line(str);
-		std::string num;
-		std::vector<std::string> nums;
-		while(std::getline(line, num, ','))
-		{
-			nums.push_back(num);
-		}
-		label = std::stoi(nums[0]);
-		for (int i = 0; i < 784; ++i)
-		{
-			image[i] = static_cast<float> (std::stoi(nums[i + 1])) / 255.0;
-		}
-	}
-};
-class mnist_image
-{
-public:
-	float image[785];
-	mnist_image(std::string& str)
-	{
-		cudaMallocHost((void**) &image, 785 * sizeof(float), 4);
-		std::stringstream line(str);
-		std::string num;
-		std::vector<std::string> nums;
-		while(std::getline(line, num, ','))
-		{
-			nums.push_back(num);
-		}
-		for (int i = 0; i < 784; ++i)
-		{
-			image[i] = static_cast<float> (std::stoi(nums[i + 1])) / 255.0;
-		}
-		image[784] = 1.0f;
-	}
-};
-
-class mnist_label
-{
-public:
-	int label[1];
-	mnist_label(std::string& str)
-	{
-		// cudaError_t status = cudaMallocHost((void**) &label, sizeof(int), 4);
-		std::stringstream line(str);
-		std::string num;
-		std::getline(line, num, ',');
-		label[0] = std::stoi(num);
-	}
-};
-
-std::vector<mnist_data_point> mnist_parse(const std::string& file_name)
-{
-	std::ifstream file(file_name);
-	std::vector<mnist_data_point> data_vector;
-	std::string data_point_string;
-	while(std::getline(file, data_point_string))
-	{
-		mnist_data_point p(data_point_string);
-		data_vector.push_back(p);
-	}
-	return data_vector;
-}
-
-std::vector<mnist_image> mnist_parse_image(const std::string& file_name)
-{
-	std::ifstream file(file_name);
-	std::vector<mnist_image> data_vector;
-	std::string data_point_string;
-	while(std::getline(file, data_point_string))
-	{
-		mnist_image p(data_point_string);
-		data_vector.push_back(p);
-	}
-	return data_vector;
-}
-
-std::vector<mnist_label> mnist_parse_label(const std::string& file_name)
-{
-	std::ifstream file(file_name);
-	std::vector<mnist_label> data_vector;
-	std::string data_point_string;
-	while(std::getline(file, data_point_string))
-	{
-		mnist_label p(data_point_string);
-		data_vector.push_back(p);
-	}
-	return data_vector;
-}
 
 float get_random_float(float min, float max)
 {
@@ -377,12 +281,6 @@ __global__ void relu_kernel(tensor_4d in, tensor_4d out)
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
 
-	// if (in.at(i, j) < 0)
-	// {
-	// 	out.at(i, j) = 0;
-	// }else{
-	// 	out.at(i, j) = in.at(i, j);
-	// }
 	if (i < in.height && j < in.width)
 		*out.at(i, j) = (*in.at(i, j) < 0) ? 0 : *in.at(i, j);
 }
@@ -418,15 +316,6 @@ __global__ void relu_derivative(tensor_4d in, tensor_4d out)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	// if (i < size)
-	// {
-	// 	if (input[i] < 0)
-	// 	{
-	// 		output[i] = 0;
-	// 	}else{
-	// 		output[i] = 1;
-	// 	}
-	// }
 	if (i < in.height && j < in.width)
 		*out.at(i, j) = (*in.at(i, j) < 0.0f) ? 0.0f : 1.0f;
 }
@@ -568,12 +457,6 @@ class Regular : public Layer
 public:
 	size_t units;
 	size_t input_length;
-	// tensor_4d activations {1, 1};
-	// tensor_4d activations_alt {1, 1};
-	// tensor_4d pre_activations {1, 1};
-	// tensor_4d errors {1, 1};
-	// tensor_4d weights {1, 1};
-	// activation act;
 	bool double_activations;
 	Regular(size_t p_units=16, activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
 	Layer{act_p}, units{p_units}, input_length{p_input_length}, double_activations{p_double_activations}
@@ -651,11 +534,6 @@ public:
 	size_t filter_quantity;
 	std::array<size_t, 2> filter_dims;
 	bool same_padding {true};
-	// tensor_4d activations {1, 1, 1, 1};
-	// tensor_4d pre_activations {1, 1, 1, 1};
-	// tensor_4d errors {1, 1, 1, 1};
-	// tensor_4d weights {1, 1, 1, 1};
-	// activation act;
 	Convolutional(size_t p_filter_quantity, std::array<size_t, 2> p_filter_dims,
 		activation act_p=relu, bool p_same_padding=true):
 	Layer{act_p}, filter_quantity {p_filter_quantity}, same_padding {p_same_padding},
@@ -663,12 +541,10 @@ public:
 	{}
 	void set_input_props(const Layer& ll)
 	{
-		// Convolutional& lc = static_cast<Convolutional&>(ll);
 		weights = tensor_4d(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
-		// Convolutional& lc = static_cast<Convolutional&>(ll);
 		activations = tensor_4d(
 			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
 		pre_activations = tensor_4d(
@@ -827,7 +703,6 @@ public:
 	void weight_update(bool use_alt)
 	{
 		tensor_4d& input_activations = (use_alt ? layers[0].get().activations_alt : layers[0].get().activations);
-		// int dim = (layers[1].weights.height > 50) ? 20 : 2;
 		weight_update_kernel<<<
 			get_grids(layers[1].get().weights.height, layers[1].get().weights.width),
 			get_threads(layers[1].get().weights.height, layers[1].get().weights.width),
@@ -836,7 +711,6 @@ public:
 			(layers[1].get().errors, input_activations, layers[1].get().weights, learning_rate);
 		for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
 		{
-			// int var = (l->weights.height > 50) ? 20 : 2;
 			weight_update_kernel<<<
 				get_grids(l->get().weights.height, l->get().weights.width),
 				get_threads(l->get().weights.height, l->get().weights.width),
@@ -852,19 +726,19 @@ public:
 		cudaDeviceSynchronize();
 		auto t1 = std::chrono::high_resolution_clock::now();
 		forward_pass(batch_size, false);
-		// auto t2 = std::chrono::high_resolution_clock::now();
+		auto t2 = std::chrono::high_resolution_clock::now();
 		backprop(batch_size, false);
-		// auto t3 = std::chrono::high_resolution_clock::now();
+		auto t3 = std::chrono::high_resolution_clock::now();
 		weight_update(false);
 		cudaDeviceSynchronize();
 		auto t4 = std::chrono::high_resolution_clock::now();
 		std::chrono::nanoseconds move_time = t1 - t0;
-		// std::chrono::nanoseconds forward_time = t2 - t1;
-		// std::chrono::nanoseconds back_time = t3 - t2;
+		std::chrono::nanoseconds forward_time = t2 - t1;
+		std::chrono::nanoseconds back_time = t3 - t2;
 		std::chrono::nanoseconds update_time = t4 - t1;
 		std::cout << move_time.count() << "ns \n";
-		// std::cout << forward_time.count() << "ns \n";
-		// std::cout << back_time.count() << "ns \n";
+		std::cout << forward_time.count() << "ns \n";
+		std::cout << back_time.count() << "ns \n";
 		std::cout << update_time.count() << "ns \n";
 	}
 	void single_train(float* image, int* label, size_t batch_size)
@@ -884,7 +758,7 @@ public:
 		cudaDeviceSynchronize();
 	}
 	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
-	void train(
+	void train_sequential(
 		pinned_data<T1, S, item_length1> images,
 		pinned_data<T2, S, item_length2> labels,
 		int epochs,
@@ -912,7 +786,7 @@ public:
 		}
 	}
 	template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
-	void train_pipelined(
+	void train(
 		pinned_data<T1, S, item_length1> images,
 		pinned_data<T2, S, item_length2> labels,
 		int epochs,
@@ -935,7 +809,6 @@ public:
 						labels[loopIdx], 
 						batch_size, 
 						!use_alt);
-					// cudaDeviceSynchronize();
 					forward_pass(batch_size, use_alt);
 					backprop(batch_size, use_alt);
 					weight_update(use_alt);
@@ -1011,13 +884,13 @@ int main()
 	mnist_model.finalize(32);
 
 	auto tik = std::chrono::high_resolution_clock::now();
-	mnist_model.train_pipelined(train_images, train_labels, 7, 32);
+	mnist_model.train(train_images, train_labels, 7, 32);
 
 	// mnist_model.learning_rate = 0.001f;
-	// mnist_model.train_pipelined(train_images, train_labels, 5, 32);
+	// mnist_model.train(train_images, train_labels, 5, 32);
 
 	// mnist_model.learning_rate = 0.0001f;
-	// mnist_model.train_pipelined(train_images, train_labels, 5, 32);
+	// mnist_model.train(train_images, train_labels, 5, 32);
 
 	auto tok = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double, std::milli> ms_double = tok - tik;
