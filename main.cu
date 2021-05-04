@@ -18,13 +18,15 @@ public:
 	T* beginning {};
 	T* end;
 	size_t size = S;
-	PinnedData(const std::string& file_name)
+	size_t actual_item_length;
+	PinnedData(const std::string& file_name, bool bias=false):
+	actual_item_length {item_length + (bias ? 1 : 0)}
 	{
-		cudaMallocHost((void**) &beginning, sizeof(T) * size * item_length, 4);
+		cudaMallocHost((void**) &beginning, sizeof(T) * size * actual_item_length, 4);
 		end = beginning;
 		std::ifstream file(file_name);
 		std::string data_point_string;
-		if (item_length == 1)
+		if (actual_item_length == 1)
 		{
 			while(std::getline(file, data_point_string))
 			{
@@ -46,12 +48,15 @@ public:
 		{
 			nums.push_back(num);
 		}
-		for (int i = 0; i < 784; ++i)
+		for (int i = 0; i < item_length; ++i)
 		{
 			end[i] = static_cast<float> (std::stoi(nums[i + 1])) / 255.0;
 		}
-		end[784] = 1.0f;
-		end += 785;
+		if (actual_item_length != item_length) 
+		{
+			end[item_length] = 1.0f;
+		}
+		end += actual_item_length;
 	}
 	void add_label(std::string& str)
 	{
@@ -63,7 +68,7 @@ public:
 	}
 	T* operator[](int idx)
 	{
-		return &beginning[idx * item_length];
+		return &beginning[idx * actual_item_length];
 	}
 };
 
@@ -446,6 +451,7 @@ public:
 	virtual void set_input_props(const Layer& lla) = 0;
 	virtual void initialize_with_batch_size(size_t batch_size, const Layer& ll) = 0;
 	virtual size_t get_output_size() const = 0;
+	virtual size_t get_output_bias_size() const = 0;
 	virtual size_t get_depth() const = 0;
 	virtual size_t get_height() const = 0;
 	virtual size_t get_width() const = 0;
@@ -499,7 +505,7 @@ public:
 	}
 	void set_input_props(const Layer& ll)
 	{
-		input_length = ll.get_output_size();
+		input_length = ll.get_output_size() + ll.get_output_bias_size();
 		weights = Tensor(input_length, units);
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -512,7 +518,11 @@ public:
 	}
 	size_t get_output_size() const
 	{
-		return units + 1;
+		return units;
+	}
+	size_t get_output_bias_size() const 
+	{
+		return 1;
 	}
 	size_t get_depth() const
 	{
@@ -533,28 +543,52 @@ class Convolutional : public Layer
 public:
 	size_t filter_quantity;
 	std::array<size_t, 2> filter_dims;
+	std::array<size_t, 2> map_dims;
 	bool same_padding {true};
 	Convolutional(size_t p_filter_quantity, std::array<size_t, 2> p_filter_dims,
 		Activation act_p=relu, bool p_same_padding=true):
 	Layer{act_p}, filter_quantity {p_filter_quantity}, same_padding {p_same_padding},
-	filter_dims {p_filter_dims}
+	filter_dims {p_filter_dims}, map_dims {0, 0}
 	{}
+	Convolutional(size_t p_height, size_t p_width, Activation act_p=relu):
+		Layer{act_p}, map_dims {p_height, p_width}, filter_quantity {1}
+	{}
+	void forward(Tensor& input, cudaStream_t s)
+	{
+		
+	}
+	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
+	{
+		
+	}
 	void set_input_props(const Layer& ll)
 	{
 		weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
+		const size_t final_height = map_dims[0] ? map_dims[0] : ll.get_height();
+		const size_t final_width = map_dims[1] ? map_dims[1] : ll.get_width();
 		activations = Tensor(
-			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
-		pre_activations = Tensor(
-			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
-		errors = Tensor(
-			ll.get_height(), ll.get_width(), filter_quantity, batch_size);
+			final_height, final_width, filter_quantity, batch_size);
+		if (map_dims[0])
+		{
+			activations_alt = Tensor(
+				final_height, final_width, filter_quantity, batch_size);
+		} else {
+			pre_activations = Tensor(
+				final_height, final_width, filter_quantity, batch_size);
+			errors = Tensor(
+				final_height, final_width, filter_quantity, batch_size);
+		}
 	}
 	size_t get_output_size() const
 	{
-		return activations.height * activations.width * activations.depth * activations.fourth;
+		return activations.height * activations.width * activations.depth;
+	}
+	size_t get_output_bias_size() const 
+	{
+		return 0;
 	}
 	size_t get_depth() const
 	{
@@ -660,9 +694,9 @@ public:
 			(use_alt ? layers.front().get().activations_alt.d_copy : layers.front().get().activations.d_copy),
 			(use_alt ? layers.front().get().activations_alt.pitch : layers.front().get().activations.pitch),
 			input_data, 
-			sizeof(float) * (layers.front().get().get_output_size()),
-			sizeof(float) * (layers.front().get().get_output_size()),
-			batch_size,
+			sizeof(float) * (layers.front().get().activations.width),
+			sizeof(float) * (layers.front().get().activations.width),
+			batch_size * 28,
 			cudaMemcpyHostToDevice,
 			data_transfer_s);
 		cudaMemcpyAsync(
@@ -688,8 +722,8 @@ public:
 	void backprop(size_t batch_size, bool use_alt)
 	{
 		out_err_func<<<
-		get_grids(batch_size, layers.back().get().get_output_size() - 1), 
-		get_threads(batch_size, layers.back().get().get_output_size() - 1), 
+		get_grids(batch_size, layers.back().get().get_output_size()), 
+		get_threads(batch_size, layers.back().get().get_output_size()), 
 		0, 
 		kernel_exec_s>>>
 		(layers.back().get().activations, 
@@ -865,15 +899,17 @@ int main()
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	PinnedData<float, 10000, 785> test_images("sample_data/mnist_test.csv");
+	PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv");
 	PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-	PinnedData<float, 20000, 785> train_images("sample_data/mnist_train_small.csv");
+	PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv");
 	PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
-	Regular layer1 = Regular(784, relu, true);
-	Regular layer2 = Regular(128);
-	Regular layer3 = Regular(128);
-	Regular layer4 = Regular(10, softmax);
+	// auto layer1 = Regular(784, relu, true);
+	auto layer1 = Convolutional(28, 28);
+	// auto layer2 = Regular(128);
+	auto layer2 = Convolutional(5, {2, 2});
+	auto layer3 = Regular(128);
+	auto layer4 = Regular(10, softmax);
 
 	Model mnist_model(cross_entropy, 0.05f);
 	mnist_model.add(layer1);
@@ -883,8 +919,20 @@ int main()
 
 	mnist_model.finalize(32);
 
-	auto tik = std::chrono::high_resolution_clock::now();
-	mnist_model.train(train_images, train_labels, 7, 32);
+	mnist_model.move_batch(train_images[0], train_labels[0], 32, false);
+	cudaDeviceSynchronize();
+	std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+	// cudaDeviceProp props;
+	// cudaGetDeviceProperties(&props, 0);
+	// std::cout << props.memPitch << '\n';
+	// std::cout << mnist_model.layers.front().get().get_output_size() << '\n';
+	// std::cout << mnist_model.layers.front().get().get_output_bias_size() << '\n';
+	// std::cout << mnist_model.layers.front().get().activations.pitch << '\n';
+	// std::cout << sizeof(float) << '\n';
+	std::cout << mnist_model.layers[0].get().activations << '\n';
+
+	// auto tik = std::chrono::high_resolution_clock::now();
+	// mnist_model.train(train_images, train_labels, 7, 32);
 
 	// mnist_model.learning_rate = 0.001f;
 	// mnist_model.train(train_images, train_labels, 5, 32);
@@ -892,11 +940,11 @@ int main()
 	// mnist_model.learning_rate = 0.0001f;
 	// mnist_model.train(train_images, train_labels, 5, 32);
 
-	auto tok = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	std::cout << ms_double.count() << "ms \n";
+	// auto tok = std::chrono::high_resolution_clock::now();
+	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	// std::cout << ms_double.count() << "ms \n";
 
-	mnist_model.test(test_images, test_labels, 32);
+	// mnist_model.test(test_images, test_labels, 32);
 
 	return 0;
 }
