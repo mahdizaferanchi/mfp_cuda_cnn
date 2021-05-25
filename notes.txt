@@ -1,1 +1,4 @@
 make conv layer actually work
+
+conv > conv
+conv > fc
