@@ -904,10 +904,10 @@ int main()
 	PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv");
 	PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
-	// auto layer1 = Regular(784, relu, true);
-	auto layer1 = Convolutional(28, 28);
-	// auto layer2 = Regular(128);
-	auto layer2 = Convolutional(5, {2, 2});
+	auto layer1 = Regular(784, relu, true);
+	// auto layer1 = Convolutional(28, 28);
+	auto layer2 = Regular(128);
+	// auto layer2 = Convolutional(5, {2, 2});
 	auto layer3 = Regular(128);
 	auto layer4 = Regular(10, softmax);
 
@@ -931,8 +931,8 @@ int main()
 	// std::cout << sizeof(float) << '\n';
 	// std::cout << mnist_model.layers[0].get().activations << '\n';
 
-	// auto tik = std::chrono::high_resolution_clock::now();
-	// mnist_model.train(train_images, train_labels, 7, 32);
+	auto tik = std::chrono::high_resolution_clock::now();
+	mnist_model.train(train_images, train_labels, 7, 32);
 
 	// mnist_model.learning_rate = 0.001f;
 	// mnist_model.train(train_images, train_labels, 5, 32);
@@ -940,11 +940,11 @@ int main()
 	// mnist_model.learning_rate = 0.0001f;
 	// mnist_model.train(train_images, train_labels, 5, 32);
 
-	// auto tok = std::chrono::high_resolution_clock::now();
-	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	// std::cout << ms_double.count() << "ms \n";
+	auto tok = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	std::cout << ms_double.count() << "ms \n";
 
-	// mnist_model.test(test_images, test_labels, 32);
+	mnist_model.test(test_images, test_labels, 32);
 
 	return 0;
 }
