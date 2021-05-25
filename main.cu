@@ -884,6 +884,19 @@ int main()
 	mnist_model.finalize(32);
 
 	auto tik = std::chrono::high_resolution_clock::now();
+	// mnist_model.move_batch(train_images[0], train_labels[0], 32, false);
+	// cudaDeviceSynchronize();
+	// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+	// cudaDeviceProp props;
+	// cudaGetDeviceProperties(&props, 0);
+	// std::cout << props.memPitch << '\n';
+	// std::cout << mnist_model.layers.front().get().get_output_size() << '\n';
+	// std::cout << mnist_model.layers.front().get().get_output_bias_size() << '\n';
+	// std::cout << mnist_model.layers.front().get().activations.pitch << '\n';
+	// std::cout << sizeof(float) << '\n';
+	// std::cout << mnist_model.layers[0].get().activations << '\n';
+
+	// auto tik = std::chrono::high_resolution_clock::now();
 	mnist_model.train(train_images, train_labels, 7, 32);
 
 	// mnist_model.learning_rate = 0.001f;
