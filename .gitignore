@@ -1,3 +1,3 @@
-mnist_test.csv
-mnist_train_small.csv
-mnist_with_cuda.sublime-project
+./mnist_test.csv
+./mnist_train_small.csv
+./mnist_with_cuda.sublime-project
