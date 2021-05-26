@@ -157,6 +157,13 @@ public:
 			cudaMemcpyDeviceToHost);
 		return h_copy;
 	}
+	void write(float* content)
+	{
+		size_t float_size = sizeof(float);
+		cudaMemcpy2D(d_copy, pitch, content, 
+			width * float_size, float_size * width, height, 
+			cudaMemcpyHostToDevice);	
+	}
 	friend std::ostream& operator<<(std::ostream& os, CustomMatrix& mat)
 	{
 		float* result = mat.read();
@@ -279,6 +286,35 @@ __global__ void matmulmatT(Tensor left, Tensor right, Tensor out)
 		}
 		*out.at(i, j) = result;
 	}
+}
+
+__global__ void transform(Tensor in, Tensor t_mat, Tensor out) 
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	int k = blockIdx.z * blockDim.z + threadIdx.z;
+	if (i < in.height && j < t_mat.width)
+	{
+		float result = 0.0f;
+		for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
+		{
+			result += *in.at(i, loopIdx, k % in.depth, k / in.depth) * (*t_mat.at(loopIdx, j, k % in.depth, k / in.depth));
+		}
+		*out.at(i, j, k % in.depth, k / in.depth) = result;
+	}
+
+	// __syncthreads();
+
+	if (i < out.height && j < t_mat.height)
+	{
+		float result = 0.0f;
+		for (int loopIdx = 0; loopIdx < out.width; ++loopIdx)
+		{
+			result += *out.at(i, loopIdx) * (*t_mat.at(j, loopIdx));
+		}
+		*out.at(i, j) = result;
+	}
+
 }
 
 __global__ void relu_kernel(Tensor in, Tensor out)
@@ -544,6 +580,7 @@ public:
 	size_t filter_quantity;
 	std::array<size_t, 2> filter_dims;
 	std::array<size_t, 2> map_dims;
+	Tensor transformed_weights {1, 1};
 	bool same_padding {true};
 	Convolutional(size_t p_filter_quantity, std::array<size_t, 2> p_filter_dims,
 		Activation act_p=relu, bool p_same_padding=true):
@@ -564,6 +601,18 @@ public:
 	void set_input_props(const Layer& ll)
 	{
 		weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
+		float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
+		Tensor G_matrix {4, 3};
+		G_matrix.write(filter_transform_matrix_values);
+		size_t tile_dim = weights.height + 2 - 1;
+		transformed_weights = Tensor(tile_dim, tile_dim, ll.get_depth(), filter_quantity);
+		transform<<<
+			1, 
+			dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
+			>>>(weights, G_matrix, transformed_weights);
+		std::cout << weights << '\n';
+		std::cout << transformed_weights << '\n';
+
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
@@ -904,10 +953,10 @@ int main()
 	PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv");
 	PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
-	auto layer1 = Regular(784, relu, true);
-	// auto layer1 = Convolutional(28, 28);
-	auto layer2 = Regular(128);
-	// auto layer2 = Convolutional(5, {2, 2});
+	// auto layer1 = Regular(784, relu, true);
+	auto layer1 = Convolutional(28, 28);
+	// auto layer2 = Regular(128);
+	auto layer2 = Convolutional(1, {3, 3});
 	auto layer3 = Regular(128);
 	auto layer4 = Regular(10, softmax);
 
@@ -931,8 +980,8 @@ int main()
 	// std::cout << sizeof(float) << '\n';
 	// std::cout << mnist_model.layers[0].get().activations << '\n';
 
-	auto tik = std::chrono::high_resolution_clock::now();
-	mnist_model.train(train_images, train_labels, 7, 32);
+	// auto tik = std::chrono::high_resolution_clock::now();
+	// mnist_model.train(train_images, train_labels, 7, 32);
 
 	// mnist_model.learning_rate = 0.001f;
 	// mnist_model.train(train_images, train_labels, 5, 32);
@@ -940,11 +989,16 @@ int main()
 	// mnist_model.learning_rate = 0.0001f;
 	// mnist_model.train(train_images, train_labels, 5, 32);
 
-	auto tok = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double, std::milli> ms_double = tok - tik;
-	std::cout << ms_double.count() << "ms \n";
+	// auto tok = std::chrono::high_resolution_clock::now();
+	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
+	// std::cout << ms_double.count() << "ms \n";
 
-	mnist_model.test(test_images, test_labels, 32);
+	// mnist_model.test(test_images, test_labels, 32);
 
 	return 0;
 }
+// C1	C2	C3	C4
+// 1	0.304177	-0.0690998	0.2742212	-0.0990556
+// 2	-0.0330165	-0.1001689	0.2670871	0.1999347
+// 3	0.3371935	0.0310691	0.0071341	-0.2989903
+// 4	0	0	0	0
