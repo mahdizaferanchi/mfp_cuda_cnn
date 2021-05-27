@@ -230,7 +230,7 @@ public:
 				{
 					for (int j = 0; j < mat.width; ++j)
 					{
-						os << result[f * mat.depth * mat.height + d * mat.height + i * mat.width + j] << " ";
+						os << result[f * mat.depth * mat.height * mat.width + d * mat.height * mat.width + i * mat.width + j] << " ";
 					}
 					os << '\n';
 				}	
@@ -293,26 +293,40 @@ __global__ void transform(Tensor in, Tensor t_mat, Tensor out)
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
 	int k = blockIdx.z * blockDim.z + threadIdx.z;
-	if (i < in.height && j < t_mat.width)
+
+	__shared__ float intermediate[4][3][1][3];
+
+	if (i < t_mat.height && j < in.width)
 	{
 		float result = 0.0f;
-		for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
+		for (int loopIdx = 0; loopIdx < t_mat.width; ++loopIdx)
 		{
-			result += *in.at(i, loopIdx, k % in.depth, k / in.depth) * (*t_mat.at(loopIdx, j, k % in.depth, k / in.depth));
+			result += *t_mat.at(i, loopIdx) * (*in.at(loopIdx, j, k % in.depth, k / in.depth));
 		}
-		*out.at(i, j, k % in.depth, k / in.depth) = result;
+		// *out.at(i, j, k % in.depth, k / in.depth) = result;
+		intermediate[i][j][k % in.depth][k / in.depth] = result;
 	}
 
 	// __syncthreads();
 
-	if (i < out.height && j < t_mat.height)
+	// if (i < out.height && j < t_mat.height)
+	// {
+	// 	float result = 0.0f;
+	// 	for (int loopIdx = 0; loopIdx < out.width; ++loopIdx)
+	// 	{
+	// 		result += *out.at(i, loopIdx, k % in.depth, k / in.depth) * (*t_mat.at(j, loopIdx));
+	// 	}
+	// 	*out.at(i, j, k % in.depth, k / in.depth) = result;
+	// }
+
+	if (i < t_mat.height && j < t_mat.height)
 	{
 		float result = 0.0f;
-		for (int loopIdx = 0; loopIdx < out.width; ++loopIdx)
+		for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
 		{
-			result += *out.at(i, loopIdx) * (*t_mat.at(j, loopIdx));
+			result += intermediate[i][loopIdx][k % in.depth][k / in.depth] * (*t_mat.at(j, loopIdx));
 		}
-		*out.at(i, j) = result;
+		*out.at(i, j, k % in.depth, k / in.depth) = result;
 	}
 
 }
@@ -610,8 +624,8 @@ public:
 			1, 
 			dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
 			>>>(weights, G_matrix, transformed_weights);
-		std::cout << weights << '\n';
-		std::cout << transformed_weights << '\n';
+		// std::cout << weights << '\n';
+		// std::cout << transformed_weights << '\n';
 
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -641,15 +655,16 @@ public:
 	}
 	size_t get_depth() const
 	{
-		return weights.depth;
+		// return activations.depth;
+		return filter_quantity;
 	}
 	size_t get_height() const
 	{
-		return weights.height;
+		return activations.height;
 	}
 	size_t get_width() const
 	{
-		return weights.width;
+		return activations.width;
 	}
 };
 
@@ -956,8 +971,9 @@ int main()
 	// auto layer1 = Regular(784, relu, true);
 	auto layer1 = Convolutional(28, 28);
 	// auto layer2 = Regular(128);
-	auto layer2 = Convolutional(1, {3, 3});
-	auto layer3 = Regular(128);
+	auto layer2 = Convolutional(3, {3, 3});
+	// auto layer3 = Regular(128);
+	auto layer3 = Convolutional(3, {3, 3});
 	auto layer4 = Regular(10, softmax);
 
 	Model mnist_model(cross_entropy, 0.05f);
@@ -967,6 +983,16 @@ int main()
 	mnist_model.add(layer4);
 
 	mnist_model.finalize(32);
+
+	std::cout << mnist_model.layers[0].get().weights.depth << '\n';
+	std::cout << mnist_model.layers[1].get().weights.depth << '\n';
+	std::cout << mnist_model.layers[2].get().weights.depth << '\n';
+	std::cout << mnist_model.layers[3].get().weights.depth << '\n';
+
+	std::cout << mnist_model.layers[0].get().activations.depth << '\n';
+	std::cout << mnist_model.layers[1].get().activations.depth << '\n';
+	std::cout << mnist_model.layers[2].get().activations.depth << '\n';
+	std::cout << mnist_model.layers[3].get().activations.depth << '\n';
 
 	// mnist_model.move_batch(train_images[0], train_labels[0], 32, false);
 	// cudaDeviceSynchronize();
@@ -997,8 +1023,4 @@ int main()
 
 	return 0;
 }
-// C1	C2	C3	C4
-// 1	0.304177	-0.0690998	0.2742212	-0.0990556
-// 2	-0.0330165	-0.1001689	0.2670871	0.1999347
-// 3	0.3371935	0.0310691	0.0071341	-0.2989903
-// 4	0	0	0	0
+
