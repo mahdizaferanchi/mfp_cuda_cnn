@@ -288,13 +288,13 @@ __global__ void matmulmatT(Tensor left, Tensor right, Tensor out)
 	}
 }
 
-__global__ void transform(Tensor in, Tensor t_mat, Tensor out) 
+__global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out) 
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
 	int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-	__shared__ float intermediate[4][3][1][3];
+	__shared__ float intermediate[4][3][3][3];//probably should be parametrized in the future
 
 	if (i < t_mat.height && j < in.width)
 	{
@@ -327,6 +327,32 @@ __global__ void transform(Tensor in, Tensor t_mat, Tensor out)
 			result += intermediate[i][loopIdx][k % in.depth][k / in.depth] * (*t_mat.at(j, loopIdx));
 		}
 		*out.at(i, j, k % in.depth, k / in.depth) = result;
+	}
+
+}
+
+__global__ void map_transform(Tensor in, Tensor t_mat, Tensor out) 
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+	int xIdx = i * 2;
+	int yIdx = j * 2;
+	int zIdx = k * 2;
+
+	extern __shared__ float intermediate[];
+
+	float result = 0.0f;
+
+	for (int hIdx = 0; hIdx < 4; ++hIdx)
+	{
+		result = 0;
+		for (int vIdx = 0; vIdx < 4; ++vIdx)
+		{
+			result += (*t_mat.at(hIdx, vIdx)) * (*in.at(yIdx + vIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+		}
+		// intermediate[hIdx]
 	}
 
 }
@@ -606,7 +632,15 @@ public:
 	{}
 	void forward(Tensor& input, cudaStream_t s)
 	{
-		
+		float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
+		Tensor B_matrix {4, 4};
+		B_matrix.write(map_transform_matrix_values);
+		Tensor transformed_map {2 * input.height, 2 * input.width, input.depth, input.fourth};
+		map_transform<<<
+			1,
+			dim3(1/2 * input.height, 1/2 * input.width),
+			10
+			>>>(input, B_matrix, transformed_map);
 	}
 	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
 	{
@@ -620,13 +654,10 @@ public:
 		G_matrix.write(filter_transform_matrix_values);
 		size_t tile_dim = weights.height + 2 - 1;
 		transformed_weights = Tensor(tile_dim, tile_dim, ll.get_depth(), filter_quantity);
-		transform<<<
+		filter_transform<<<
 			1, 
 			dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
 			>>>(weights, G_matrix, transformed_weights);
-		// std::cout << weights << '\n';
-		// std::cout << transformed_weights << '\n';
-
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
@@ -984,15 +1015,6 @@ int main()
 
 	mnist_model.finalize(32);
 
-	std::cout << mnist_model.layers[0].get().weights.depth << '\n';
-	std::cout << mnist_model.layers[1].get().weights.depth << '\n';
-	std::cout << mnist_model.layers[2].get().weights.depth << '\n';
-	std::cout << mnist_model.layers[3].get().weights.depth << '\n';
-
-	std::cout << mnist_model.layers[0].get().activations.depth << '\n';
-	std::cout << mnist_model.layers[1].get().activations.depth << '\n';
-	std::cout << mnist_model.layers[2].get().activations.depth << '\n';
-	std::cout << mnist_model.layers[3].get().activations.depth << '\n';
 
 	// mnist_model.move_batch(train_images[0], train_labels[0], 32, false);
 	// cudaDeviceSynchronize();
