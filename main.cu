@@ -340,6 +340,7 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 	int xIdx = i * 2;
 	int yIdx = j * 2;
 	int zIdx = k * 2;
+	*out.at(0, 0, 0, 0) = 3.14;
 
 	extern __shared__ float intermediate[];
 
@@ -347,12 +348,17 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 
 	for (int hIdx = 0; hIdx < 4; ++hIdx)
 	{
-		result = 0;
 		for (int vIdx = 0; vIdx < 4; ++vIdx)
 		{
-			result += (*t_mat.at(hIdx, vIdx)) * (*in.at(yIdx + vIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+			result = 0;
+			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
+			{
+				// result += (*t_mat.at(hIdx, vIdx + loopIdx)) * (*in.at(yIdx + vIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+			}
+			// intermediate[(k / in.depth) * in.depth * 4 * in.height * in.width, (k % in.depth) * 4 * in.height * in.width + (yIdx + vIdx) * 2 * in.width * (xIdx + hIdx)] = 1.25;
+			// *out.at((xIdx + hIdx), (yIdx + vIdx), (k % in.depth), (k / in.depth)) = 1.22;
+			// *out.at(0, 0, 0, 0) = 3.14;
 		}
-		// intermediate[hIdx]
 	}
 
 }
@@ -636,11 +642,20 @@ public:
 		Tensor B_matrix {4, 4};
 		B_matrix.write(map_transform_matrix_values);
 		Tensor transformed_map {2 * input.height, 2 * input.width, input.depth, input.fourth};
+		std::cout << input.height << ' ' << input.width << ' ' << input.depth << ' ' << input.fourth << '\n';
+		dim3 block_dimss = dim3(input.height / 2, (1/2) * input.width, input.depth * input.fourth);
+		std::cout << block_dimss.x << '\n';
 		map_transform<<<
 			1,
-			dim3(1/2 * input.height, 1/2 * input.width),
-			10
+			5
+			// 5
+			// 2 * input.height * 2 * input.width * input.depth * input.fourth
 			>>>(input, B_matrix, transformed_map);
+		cudaDeviceSynchronize();
+		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+		std::cout << "****\n";
+		std::cout << transformed_map << '\n';
+		std::cout << "***\n";
 	}
 	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
 	{
@@ -1003,8 +1018,8 @@ int main()
 	auto layer1 = Convolutional(28, 28);
 	// auto layer2 = Regular(128);
 	auto layer2 = Convolutional(3, {3, 3});
-	// auto layer3 = Regular(128);
-	auto layer3 = Convolutional(3, {3, 3});
+	auto layer3 = Regular(128);
+	// auto layer3 = Convolutional(3, {3, 3});
 	auto layer4 = Regular(10, softmax);
 
 	Model mnist_model(cross_entropy, 0.05f);
@@ -1013,11 +1028,13 @@ int main()
 	mnist_model.add(layer3);
 	mnist_model.add(layer4);
 
-	mnist_model.finalize(32);
+	mnist_model.finalize(1);
+
+	mnist_model.move_batch(train_images[0], train_labels[0], 1, false);
+	cudaDeviceSynchronize();
+	mnist_model.forward_pass(1, false);
 
 
-	// mnist_model.move_batch(train_images[0], train_labels[0], 32, false);
-	// cudaDeviceSynchronize();
 	// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 	// cudaDeviceProp props;
 	// cudaGetDeviceProperties(&props, 0);
