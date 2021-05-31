@@ -340,7 +340,6 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 	int xIdx = i * 2;
 	int yIdx = j * 2;
 	int zIdx = k * 2;
-	*out.at(0, 0, 0, 0) = 3.14;
 
 	extern __shared__ float intermediate[];
 
@@ -353,10 +352,11 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 			result = 0;
 			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
 			{
-				// result += (*t_mat.at(hIdx, vIdx + loopIdx)) * (*in.at(yIdx + vIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+				result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+				// result = (yIdx) * 1000 + (xIdx + hIdx) * 10;
 			}
 			// intermediate[(k / in.depth) * in.depth * 4 * in.height * in.width, (k % in.depth) * 4 * in.height * in.width + (yIdx + vIdx) * 2 * in.width * (xIdx + hIdx)] = 1.25;
-			// *out.at((xIdx + hIdx), (yIdx + vIdx), (k % in.depth), (k / in.depth)) = 1.22;
+			*out.at((2 * xIdx + hIdx), (2 * yIdx + vIdx), (k % in.depth), (k / in.depth)) = result;
 			// *out.at(0, 0, 0, 0) = 3.14;
 		}
 	}
@@ -642,15 +642,13 @@ public:
 		Tensor B_matrix {4, 4};
 		B_matrix.write(map_transform_matrix_values);
 		Tensor transformed_map {2 * input.height, 2 * input.width, input.depth, input.fourth};
-		std::cout << input.height << ' ' << input.width << ' ' << input.depth << ' ' << input.fourth << '\n';
-		dim3 block_dimss = dim3(input.height / 2, (1/2) * input.width, input.depth * input.fourth);
-		std::cout << block_dimss.x << '\n';
 		map_transform<<<
 			1,
-			5
-			// 5
-			// 2 * input.height * 2 * input.width * input.depth * input.fourth
+			dim3(input.height / 2, input.width / 2, input.depth * input.fourth),
+			2 * input.height * 2 * input.width * input.depth * input.fourth
 			>>>(input, B_matrix, transformed_map);
+		std::cout.precision(8);
+		std::cout << input << '\n';
 		cudaDeviceSynchronize();
 		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 		std::cout << "****\n";
