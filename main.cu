@@ -212,11 +212,15 @@ public:
 	size_t width;
 	size_t depth;
 	size_t fourth;
+	float* zero {};
 	Tensor(size_t p_height, size_t p_width, size_t p_depth=1, size_t p_fourth=1, 
 		bool one_initialization=false, float initial_max=0.5):
 	CustomMatrix{p_height * p_depth * p_fourth, p_width, one_initialization, initial_max},
 	height {p_height}, width {p_width}, depth {p_depth}, fourth {p_fourth}
-	{}
+	{
+		cudaMalloc((void **) &zero, sizeof(float));
+		cudaMemset(zero, 0, sizeof(float));
+	}
 	friend std::ostream& operator<<(std::ostream& os, Tensor& mat)
 	{
 		float* result = mat.read();
@@ -240,6 +244,10 @@ public:
 	}
 	__device__ inline float* at(int row, int col, int page=0, int block=0)
 	{
+		if (row < 0 || row > height || col < 0 || col > width)
+		{
+			return zero;
+		}
 		return (float*)((char*)d_copy + (block * height * depth + page * height + row) * pitch) + col;
 	}
 };
@@ -353,11 +361,9 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
 			{
 				result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
-				// result = (yIdx) * 1000 + (xIdx + hIdx) * 10;
 			}
 			// intermediate[(k / in.depth) * in.depth * 4 * in.height * in.width, (k % in.depth) * 4 * in.height * in.width + (yIdx + vIdx) * 2 * in.width * (xIdx + hIdx)] = 1.25;
-			*out.at((2 * xIdx + hIdx), (2 * yIdx + vIdx), (k % in.depth), (k / in.depth)) = result;
-			// *out.at(0, 0, 0, 0) = 3.14;
+			*out.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
 		}
 	}
 
@@ -647,7 +653,6 @@ public:
 			dim3(input.height / 2, input.width / 2, input.depth * input.fourth),
 			2 * input.height * 2 * input.width * input.depth * input.fourth
 			>>>(input, B_matrix, transformed_map);
-		std::cout.precision(8);
 		std::cout << input << '\n';
 		cudaDeviceSynchronize();
 		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
@@ -1032,6 +1037,21 @@ int main()
 	cudaDeviceSynchronize();
 	mnist_model.forward_pass(1, false);
 
+	// float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
+	// Tensor B_matrix {4, 4};
+	// B_matrix.write(map_transform_matrix_values);
+
+	// Tensor input {4, 4};
+	// Tensor result {8, 8};
+	
+	// map_transform<<<
+	// 	1,
+	// 	dim3(2, 2),
+	// 	64
+	// 	>>>(input, B_matrix, result);
+
+	// std::cout << input << '\n';
+	// std::cout << result << '\n';
 
 	// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 	// cudaDeviceProp props;
