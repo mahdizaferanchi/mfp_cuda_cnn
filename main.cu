@@ -10,6 +10,7 @@
 #include <string>
 #include <array>
 #include <functional>
+#include <iomanip>
 
 template <class T, size_t S, size_t item_length>
 class PinnedData
@@ -234,7 +235,7 @@ public:
 				{
 					for (int j = 0; j < mat.width; ++j)
 					{
-						os << result[f * mat.depth * mat.height * mat.width + d * mat.height * mat.width + i * mat.width + j] << " ";
+						os << std::setw(10) << result[f * mat.depth * mat.height * mat.width + d * mat.height * mat.width + i * mat.width + j] << " ";
 					}
 					os << '\n';
 				}	
@@ -315,18 +316,6 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
 		intermediate[i][j][k % in.depth][k / in.depth] = result;
 	}
 
-	// __syncthreads();
-
-	// if (i < out.height && j < t_mat.height)
-	// {
-	// 	float result = 0.0f;
-	// 	for (int loopIdx = 0; loopIdx < out.width; ++loopIdx)
-	// 	{
-	// 		result += *out.at(i, loopIdx, k % in.depth, k / in.depth) * (*t_mat.at(j, loopIdx));
-	// 	}
-	// 	*out.at(i, j, k % in.depth, k / in.depth) = result;
-	// }
-
 	if (i < t_mat.height && j < t_mat.height)
 	{
 		float result = 0.0f;
@@ -339,7 +328,7 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
 
 }
 
-__global__ void map_transform(Tensor in, Tensor t_mat, Tensor out) 
+__global__ void map_transform(Tensor in, Tensor t_mat, Tensor inter, Tensor out) 
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -349,7 +338,7 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 	int yIdx = j * 2;
 	int zIdx = k * 2;
 
-	extern __shared__ float intermediate[];
+	float intermediate[4][4];
 
 	float result = 0.0f;
 
@@ -362,10 +351,23 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 			{
 				result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
 			}
-			// intermediate[(k / in.depth) * in.depth * 4 * in.height * in.width, (k % in.depth) * 4 * in.height * in.width + (yIdx + vIdx) * 2 * in.width * (xIdx + hIdx)] = 1.25;
-			*out.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+			// *inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+			intermediate[vIdx][hIdx] = result;
 		}
 	}
+
+	for (int hIdx = 0; hIdx < 4; ++hIdx)
+	{
+		for (int vIdx = 0; vIdx < 4; ++vIdx)
+		{
+			result = 0;
+			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
+			{
+				result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+			}
+			*inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+		}
+	}	
 
 }
 
@@ -648,12 +650,13 @@ public:
 		Tensor B_matrix {4, 4};
 		B_matrix.write(map_transform_matrix_values);
 		Tensor transformed_map {2 * input.height, 2 * input.width, input.depth, input.fourth};
+		Tensor intermediate {2 * input.height, 2 * input.width, input.depth, input.fourth};
+		std::cout << input << '\n';
+		std::cout << 2 * input.height * 2 * input.width * input.depth * input.fourth << '\n';
 		map_transform<<<
 			1,
-			dim3(input.height / 2, input.width / 2, input.depth * input.fourth),
-			2 * input.height * 2 * input.width * input.depth * input.fourth
-			>>>(input, B_matrix, transformed_map);
-		std::cout << input << '\n';
+			dim3(input.height / 2, input.width / 2, input.depth * input.fourth)
+		>>>(input, B_matrix, intermediate, transformed_map);
 		cudaDeviceSynchronize();
 		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 		std::cout << "****\n";
@@ -1037,6 +1040,10 @@ int main()
 	cudaDeviceSynchronize();
 	mnist_model.forward_pass(1, false);
 
+	// cudaDeviceProp props;
+	// cudaGetDeviceProperties(&props, 0);
+	// std::cout << props.sharedMemPerBlock << '\n';
+
 	// float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
 	// Tensor B_matrix {4, 4};
 	// B_matrix.write(map_transform_matrix_values);
@@ -1054,9 +1061,6 @@ int main()
 	// std::cout << result << '\n';
 
 	// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-	// cudaDeviceProp props;
-	// cudaGetDeviceProperties(&props, 0);
-	// std::cout << props.memPitch << '\n';
 	// std::cout << mnist_model.layers.front().get().get_output_size() << '\n';
 	// std::cout << mnist_model.layers.front().get().get_output_bias_size() << '\n';
 	// std::cout << mnist_model.layers.front().get().activations.pitch << '\n';

@@ -28,6 +28,19 @@
 // std::cout << mnist_model.layers[1].get().weights << '\n';
 // std::cout << mnist_model.layers[0].get().activations << '\n';
 
+
+// __syncthreads();
+
+// if (i < out.height && j < t_mat.height)
+// {
+// 	float result = 0.0f;
+// 	for (int loopIdx = 0; loopIdx < out.width; ++loopIdx)
+// 	{
+// 		result += *out.at(i, loopIdx, k % in.depth, k / in.depth) * (*t_mat.at(j, loopIdx));
+// 	}
+// 	*out.at(i, j, k % in.depth, k / in.depth) = result;
+// }
+
 float bias_unit = 1.0;
 constexpr int image_size = 784;
 constexpr int hidden_1_size = 16;
