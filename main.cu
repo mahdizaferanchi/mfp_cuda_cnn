@@ -235,7 +235,7 @@ public:
 				{
 					for (int j = 0; j < mat.width; ++j)
 					{
-						os << std::setw(10) << result[f * mat.depth * mat.height * mat.width + d * mat.height * mat.width + i * mat.width + j] << " ";
+						os << std::setw(10) << result[f * mat.depth * mat.height * mat.width + d * mat.height * mat.width + i * mat.width + j] << ", ";
 					}
 					os << '\n';
 				}	
@@ -328,7 +328,7 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
 
 }
 
-__global__ void map_transform(Tensor in, Tensor t_mat, Tensor inter, Tensor out) 
+__global__ void map_transform(Tensor in, Tensor t_mat, Tensor out) 
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -336,7 +336,8 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor inter, Tensor out)
 
 	int xIdx = i * 2;
 	int yIdx = j * 2;
-	int zIdx = k * 2;
+	// int zIdx = k * 2;
+	// MAGIC NUMBERS
 
 	float intermediate[4][4];
 
@@ -363,12 +364,39 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor inter, Tensor out)
 			result = 0;
 			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
 			{
-				result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+				// result += (*inter.at(2 * yIdx + vIdx, 2 * xIdx + loopIdx)) * (*t_mat.at(hIdx, loopIdx));
+				result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
 			}
-			*inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+			*out.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
 		}
 	}	
+}
 
+__global__ void wts_input_mul_filter(Tensor map, Tensor filter, Tensor out) // wts = winograd transform space
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+	int xIdx = i * 4;
+	int yIdx = j * 4;
+	int mapIdx = k / filter.fourth;
+	int filterIdx = k % filter.fourth;
+
+	int alpha = filter.height;
+
+	for (int vIdx = 0; vIdx < alpha; ++vIdx)
+	{
+		for (int hIdx = 0; hIdx < alpha; ++hIdx)
+		{
+			float result = 0;
+			for (int loopIdx = 0; loopIdx < filter.depth; ++loopIdx)
+			{
+				result += *map.at(yIdx + vIdx, xIdx + hIdx, loopIdx, mapIdx) * (*filter.at(vIdx, hIdx, loopIdx, filterIdx));
+			}
+			*out.at(yIdx + vIdx, xIdx + hIdx, 0, filterIdx) = result / filter.depth;
+		}
+	}	
 }
 
 __global__ void relu_kernel(Tensor in, Tensor out)
@@ -635,33 +663,69 @@ public:
 	std::array<size_t, 2> filter_dims;
 	std::array<size_t, 2> map_dims;
 	Tensor transformed_weights {1, 1};
+	Tensor transformed_input {1, 1};
+	Tensor G_matrix {4, 3};
+	Tensor B_matrix {4, 4};
 	bool same_padding {true};
 	Convolutional(size_t p_filter_quantity, std::array<size_t, 2> p_filter_dims,
 		Activation act_p=relu, bool p_same_padding=true):
 	Layer{act_p}, filter_quantity {p_filter_quantity}, same_padding {p_same_padding},
 	filter_dims {p_filter_dims}, map_dims {0, 0}
-	{}
-	Convolutional(size_t p_height, size_t p_width, Activation act_p=relu):
-		Layer{act_p}, map_dims {p_height, p_width}, filter_quantity {1}
-	{}
-	void forward(Tensor& input, cudaStream_t s)
 	{
 		float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
-		Tensor B_matrix {4, 4};
 		B_matrix.write(map_transform_matrix_values);
-		Tensor transformed_map {2 * input.height, 2 * input.width, input.depth, input.fourth};
-		Tensor intermediate {2 * input.height, 2 * input.width, input.depth, input.fourth};
-		std::cout << input << '\n';
-		std::cout << 2 * input.height * 2 * input.width * input.depth * input.fourth << '\n';
+		float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
+		G_matrix.write(filter_transform_matrix_values);
+	}
+	Convolutional(size_t p_height, size_t p_width, Activation act_p=relu):
+	Layer{act_p}, map_dims {p_height, p_width}, filter_quantity {1}
+	{
+		float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
+		B_matrix.write(map_transform_matrix_values);
+		float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
+		G_matrix.write(filter_transform_matrix_values);
+	}
+	void forward(Tensor& input, cudaStream_t s)
+	{
+
 		map_transform<<<
-			1,
-			dim3(input.height / 2, input.width / 2, input.depth * input.fourth)
-		>>>(input, B_matrix, intermediate, transformed_map);
+			dim3(1, 1, input.depth * input.fourth),
+			dim3(input.height / 2, input.width / 2)
+			>>>(input, B_matrix, transformed_input);
+
 		cudaDeviceSynchronize();
 		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-		std::cout << "****\n";
-		std::cout << transformed_map << '\n';
-		std::cout << "***\n";
+
+		filter_transform<<<
+			1, 
+			dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
+			>>>(weights, G_matrix, transformed_weights);
+
+		Tensor conv_ans {transformed_input.height, transformed_input.width, transformed_input.depth, transformed_input.fourth};
+		wts_input_mul_filter<<<
+			dim3(1, 1, transformed_input.fourth * transformed_weights.depth),
+			dim3(transformed_input.height / 4, transformed_input.width / 4)
+			>>>(transformed_input, transformed_weights, conv_ans);
+
+		cudaDeviceSynchronize();
+		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+
+		std::cout << "Input : \n";
+		std::cout << input << '\n';
+
+		// std::cout << "**** Transformed Input:\n";
+		// std::cout << transformed_input << '\n';
+		// std::cout << "***\n";
+
+		std::cout << "Weights : \n";
+		std::cout << weights;
+
+		// std::cout << "**** Transformed Weights:\n";
+		// std::cout << transformed_weights << '\n';
+		// std::cout << "***\n";
+
+		std::cout << "after mul : \n";
+		std::cout << conv_ans << '\n';
 	}
 	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
 	{
@@ -670,18 +734,17 @@ public:
 	void set_input_props(const Layer& ll)
 	{
 		weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
-		float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
-		Tensor G_matrix {4, 3};
-		G_matrix.write(filter_transform_matrix_values);
 		size_t tile_dim = weights.height + 2 - 1;
 		transformed_weights = Tensor(tile_dim, tile_dim, ll.get_depth(), filter_quantity);
-		filter_transform<<<
-			1, 
-			dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
-			>>>(weights, G_matrix, transformed_weights);
+		transformed_input = Tensor(2 * ll.activations.height, 2 * ll.activations.width, ll.activations.depth, ll.activations.fourth);
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
+		if (&ll != this)
+		{
+			set_input_props(ll);
+		}
+		
 		const size_t final_height = map_dims[0] ? map_dims[0] : ll.get_height();
 		const size_t final_width = map_dims[1] ? map_dims[1] : ll.get_width();
 		activations = Tensor(
@@ -1024,8 +1087,8 @@ int main()
 	auto layer1 = Convolutional(28, 28);
 	// auto layer2 = Regular(128);
 	auto layer2 = Convolutional(3, {3, 3});
-	auto layer3 = Regular(128);
-	// auto layer3 = Convolutional(3, {3, 3});
+	// auto layer3 = Regular(128);
+	auto layer3 = Convolutional(2, {3, 3});
 	auto layer4 = Regular(10, softmax);
 
 	Model mnist_model(cross_entropy, 0.05f);
@@ -1034,11 +1097,11 @@ int main()
 	mnist_model.add(layer3);
 	mnist_model.add(layer4);
 
-	mnist_model.finalize(1);
+	mnist_model.finalize(2);
 
-	mnist_model.move_batch(train_images[0], train_labels[0], 1, false);
+	mnist_model.move_batch(train_images[0], train_labels[0], 2, false);
 	cudaDeviceSynchronize();
-	mnist_model.forward_pass(1, false);
+	mnist_model.forward_pass(2, false);
 
 	// cudaDeviceProp props;
 	// cudaGetDeviceProperties(&props, 0);
@@ -1064,7 +1127,6 @@ int main()
 	// std::cout << mnist_model.layers.front().get().get_output_size() << '\n';
 	// std::cout << mnist_model.layers.front().get().get_output_bias_size() << '\n';
 	// std::cout << mnist_model.layers.front().get().activations.pitch << '\n';
-	// std::cout << sizeof(float) << '\n';
 	// std::cout << mnist_model.layers[0].get().activations << '\n';
 
 	// auto tik = std::chrono::high_resolution_clock::now();
