@@ -393,8 +393,9 @@ __global__ void wts_input_mul_filter(Tensor map, Tensor filter, Tensor out) // w
 			for (int loopIdx = 0; loopIdx < filter.depth; ++loopIdx)
 			{
 				result += *map.at(yIdx + vIdx, xIdx + hIdx, loopIdx, mapIdx) * (*filter.at(vIdx, hIdx, loopIdx, filterIdx));
+				// result += *map.at(yIdx + vIdx, xIdx + hIdx, loopIdx, 0) * (*filter.at(vIdx, hIdx, loopIdx, 0));
 			}
-			*out.at(yIdx + vIdx, xIdx + hIdx, 0, filterIdx) = result / filter.depth;
+			*out.at(yIdx + vIdx, xIdx + hIdx, filterIdx, mapIdx) = result;
 		}
 	}	
 }
@@ -701,9 +702,9 @@ public:
 			dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
 			>>>(weights, G_matrix, transformed_weights);
 
-		Tensor conv_ans {transformed_input.height, transformed_input.width, transformed_input.depth, transformed_input.fourth};
+		Tensor conv_ans {transformed_input.height, transformed_input.width, filter_quantity, transformed_input.fourth};
 		wts_input_mul_filter<<<
-			dim3(1, 1, transformed_input.fourth * transformed_weights.depth),
+			dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
 			dim3(transformed_input.height / 4, transformed_input.width / 4)
 			>>>(transformed_input, transformed_weights, conv_ans);
 
