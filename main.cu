@@ -372,6 +372,50 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 	}	
 }
 
+__global__ void inverse_transform(Tensor in, Tensor t_mat, Tensor out) 
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+	int xIdx = i * 4;
+	int yIdx = j * 4;
+	// int zIdx = k * 2;
+	// MAGIC NUMBERS
+
+	float intermediate[2][4];
+
+	float result = 0.0f;
+
+	for (int hIdx = 0; hIdx < 4; ++hIdx)
+	{
+		for (int vIdx = 0; vIdx < 2; ++vIdx)
+		{
+			result = 0;
+			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
+			{
+				result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+			}
+			// *inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+			intermediate[vIdx][hIdx] = result;
+		}
+	}
+
+	for (int hIdx = 0; hIdx < 2; ++hIdx)
+	{
+		for (int vIdx = 0; vIdx < 2; ++vIdx)
+		{
+			result = 0;
+			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
+			{
+				// result += (*inter.at(2 * yIdx + vIdx, 2 * xIdx + loopIdx)) * (*t_mat.at(hIdx, loopIdx));
+				result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
+			}
+			*out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) = result;
+		}
+	}	
+}
+
 __global__ void wts_input_mul_filter(Tensor map, Tensor filter, Tensor out) // wts = winograd transform space
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -667,6 +711,7 @@ public:
 	Tensor transformed_input {1, 1};
 	Tensor G_matrix {4, 3};
 	Tensor B_matrix {4, 4};
+	Tensor A_matrix {2, 4};
 	bool same_padding {true};
 	Convolutional(size_t p_filter_quantity, std::array<size_t, 2> p_filter_dims,
 		Activation act_p=relu, bool p_same_padding=true):
@@ -677,6 +722,8 @@ public:
 		B_matrix.write(map_transform_matrix_values);
 		float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
 		G_matrix.write(filter_transform_matrix_values);
+		float inverse_transform_matrix_values[8] {1, 1, 1, 0,  0, 1, -1, -1};
+		A_matrix.write(inverse_transform_matrix_values);
 	}
 	Convolutional(size_t p_height, size_t p_width, Activation act_p=relu):
 	Layer{act_p}, map_dims {p_height, p_width}, filter_quantity {1}
@@ -685,6 +732,9 @@ public:
 		B_matrix.write(map_transform_matrix_values);
 		float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
 		G_matrix.write(filter_transform_matrix_values);
+		float inverse_transform_matrix_values[8] {1, 1, 1, 0,  0, 1, -1, -1};
+		A_matrix.write(inverse_transform_matrix_values);
+
 	}
 	void forward(Tensor& input, cudaStream_t s)
 	{
@@ -707,6 +757,12 @@ public:
 			dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
 			dim3(transformed_input.height / 4, transformed_input.width / 4)
 			>>>(transformed_input, transformed_weights, conv_ans);
+
+		Tensor result {conv_ans.height / 2, conv_ans.width / 2, conv_ans.depth, conv_ans.fourth};
+
+		// inverse_transform<<<
+			
+		// 	>>>
 
 		cudaDeviceSynchronize();
 		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
