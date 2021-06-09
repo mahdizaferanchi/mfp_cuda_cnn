@@ -416,6 +416,50 @@ __global__ void inverse_transform(Tensor in, Tensor t_mat, Tensor out)
 	}	
 }
 
+__global__ void inverse_transform_with_bias(Tensor in, Tensor t_mat, CustomMatrix biases, Tensor out) 
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+	int xIdx = i * 4;
+	int yIdx = j * 4;
+	// int zIdx = k * 2;
+	// MAGIC NUMBERS
+
+	float intermediate[2][4];
+
+	float result = 0.0f;
+
+	for (int hIdx = 0; hIdx < 4; ++hIdx)
+	{
+		for (int vIdx = 0; vIdx < 2; ++vIdx)
+		{
+			result = 0;
+			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
+			{
+				result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+			}
+			// *inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+			intermediate[vIdx][hIdx] = result + *biases.at(k % in.depth, 1);
+		}
+	}
+
+	for (int hIdx = 0; hIdx < 2; ++hIdx)
+	{
+		for (int vIdx = 0; vIdx < 2; ++vIdx)
+		{
+			result = 0;
+			for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
+			{
+				// result += (*inter.at(2 * yIdx + vIdx, 2 * xIdx + loopIdx)) * (*t_mat.at(hIdx, loopIdx));
+				result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
+			}
+			*out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) = result;
+		}
+	}	
+}
+
 __global__ void wts_input_mul_filter(Tensor map, Tensor filter, Tensor out) // wts = winograd transform space
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
