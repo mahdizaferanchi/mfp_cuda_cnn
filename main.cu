@@ -760,9 +760,10 @@ public:
 
 		Tensor result {conv_ans.height / 2, conv_ans.width / 2, conv_ans.depth, conv_ans.fourth};
 
-		// inverse_transform<<<
-			
-		// 	>>>
+		inverse_transform<<<
+			dim3(1, 1, conv_ans.depth * conv_ans.fourth),
+			dim3(conv_ans.height / 4, conv_ans.width / 4)
+			>>>(conv_ans, A_matrix, activations);
 
 		cudaDeviceSynchronize();
 		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
@@ -781,8 +782,11 @@ public:
 		// std::cout << transformed_weights << '\n';
 		// std::cout << "***\n";
 
-		std::cout << "after mul : \n";
-		std::cout << conv_ans << '\n';
+		// std::cout << "after mul : \n";
+		// std::cout << conv_ans << '\n';
+
+		std::cout << "final result: \n";
+		std::cout << activations << '\n';
 	}
 	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
 	{
