@@ -441,7 +441,7 @@ __global__ void inverse_transform_with_bias(Tensor in, Tensor t_mat, CustomMatri
 				result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
 			}
 			// *inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
-			intermediate[vIdx][hIdx] = result + *biases.at(k % in.depth, 1);
+			intermediate[vIdx][hIdx] = result;
 		}
 	}
 
@@ -455,9 +455,29 @@ __global__ void inverse_transform_with_bias(Tensor in, Tensor t_mat, CustomMatri
 				// result += (*inter.at(2 * yIdx + vIdx, 2 * xIdx + loopIdx)) * (*t_mat.at(hIdx, loopIdx));
 				result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
 			}
-			*out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) = result;
+			*out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) = result + *biases.at(0, k % in.depth);
 		}
 	}	
+}
+
+__global__ void conv_relu_kernel(Tensor in, Tensor out)
+{
+	int xIdx = (blockIdx.x * blockDim.x + threadIdx.x) * 2;
+	int yIdx = (blockIdx.y * blockDim.y + threadIdx.y) * 2;
+	int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+	int dim = 2;
+
+	for (int vIdx = 0; vIdx < dim; ++vIdx)
+	{
+		for (int hIdx = 0; hIdx < dim; ++hIdx)
+		{
+			*out.at(yIdx + vIdx, xIdx + hIdx, k % in.depth, k / in.depth) = 
+				(*in.at(yIdx + vIdx, xIdx + hIdx, k % in.depth, k / in.depth) < 0) ? 
+					0 : 
+					*in.at(yIdx + vIdx, xIdx + hIdx, k % in.depth, k / in.depth);
+		}
+	}
 }
 
 __global__ void wts_input_mul_filter(Tensor map, Tensor filter, Tensor out) // wts = winograd transform space
@@ -753,6 +773,7 @@ public:
 	std::array<size_t, 2> map_dims;
 	Tensor transformed_weights {1, 1};
 	Tensor transformed_input {1, 1};
+	CustomMatrix biases {1, 1};
 	Tensor G_matrix {4, 3};
 	Tensor B_matrix {4, 4};
 	Tensor A_matrix {2, 4};
@@ -762,6 +783,7 @@ public:
 	Layer{act_p}, filter_quantity {p_filter_quantity}, same_padding {p_same_padding},
 	filter_dims {p_filter_dims}, map_dims {0, 0}
 	{
+		biases = CustomMatrix(1, filter_quantity);
 		float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
 		B_matrix.write(map_transform_matrix_values);
 		float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
@@ -772,6 +794,7 @@ public:
 	Convolutional(size_t p_height, size_t p_width, Activation act_p=relu):
 	Layer{act_p}, map_dims {p_height, p_width}, filter_quantity {1}
 	{
+		biases = CustomMatrix(1, filter_quantity);
 		float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
 		B_matrix.write(map_transform_matrix_values);
 		float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
@@ -804,10 +827,15 @@ public:
 
 		Tensor result {conv_ans.height / 2, conv_ans.width / 2, conv_ans.depth, conv_ans.fourth};
 
-		inverse_transform<<<
+		inverse_transform_with_bias<<<
 			dim3(1, 1, conv_ans.depth * conv_ans.fourth),
 			dim3(conv_ans.height / 4, conv_ans.width / 4)
-			>>>(conv_ans, A_matrix, activations);
+			>>>(conv_ans, A_matrix, biases, pre_activations);
+
+		conv_relu_kernel<<<
+			dim3(1, 1, pre_activations.depth * pre_activations.fourth),
+			dim3(pre_activations.height / 2, pre_activations.width / 2)
+			>>>(pre_activations, activations);
 
 		cudaDeviceSynchronize();
 		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
