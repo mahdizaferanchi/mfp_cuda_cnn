@@ -251,6 +251,11 @@ public:
 		}
 		return (float*)((char*)d_copy + (block * height * depth + page * height + row) * pitch) + col;
 	}
+
+	__device__ __forceinline__ float* where(int idx, int block)
+	{
+		return (float*)((char*)d_copy + (idx / width + block * height * depth) * pitch) + (idx % width);
+	}
 };
 
 __global__ void matmulvec(float* mat, float* vec, int height, int width, float* out)
@@ -292,6 +297,21 @@ __global__ void matmulmatT(Tensor left, Tensor right, Tensor out)
 		for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
 		{
 			result += *left.at(i, loopIdx) * (*right.at(j, loopIdx));
+		}
+		*out.at(i, j) = result;
+	}
+}
+
+__global__ void convmulfc(Tensor acts, Tensor weights, Tensor out)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	if (1)
+	{
+		float result = 0.0f;
+		for (int loopIdx = 0; loopIdx < acts.width; ++loopIdx)
+		{
+			result += *acts.at(i, loopIdx) * (*weights.at(loopIdx, j));
 		}
 		*out.at(i, j) = result;
 	}
@@ -765,6 +785,32 @@ public:
 	}
 };
 
+class FCfromConv : public Regular
+{
+public:
+	FCfromConv(size_t p_units=16, Activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
+	Regular(p_units, act_p, p_double_activations, p_input_length)
+	{}
+	void forward(Tensor& input, cudaStream_t s)
+	{
+		convmulfc<<<
+			get_grids(input.height * input.width * input.depth, input.width),
+			get_threads(input.height * input.width * input.depth, input.width),
+			0, 
+			s>>>
+			(input, weights, pre_activations);
+		act.f<<<
+			get_grids(input.height * input.width * input.depth, input.width),
+			get_threads(input.height * input.width * input.depth, input.width), 
+			0, 
+			s>>>
+			(pre_activations, activations);
+		cudaDeviceSynchronize();
+		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+		std::cout << pre_activations << '\n';
+	}
+};
+
 class Convolutional : public Layer
 {
 public:
@@ -1219,9 +1265,11 @@ int main()
 	// auto layer1 = Regular(784, relu, true);
 	auto layer1 = Convolutional(28, 28);
 	// auto layer2 = Regular(128);
-	auto layer2 = Convolutional(3, {3, 3});
-	// auto layer3 = Regular(128);
-	auto layer3 = Convolutional(2, {3, 3});
+	auto layer2 = FCfromConv(128);
+	// auto layer2 = Convolutional(3, {3, 3});
+	auto layer3 = Regular(128);
+	// auto layer3 = Convolutional(2, {3, 3});
+	// auto layer4 = FCfromConv(10, softmax);
 	auto layer4 = Regular(10, softmax);
 
 	Model mnist_model(cross_entropy, 0.05f);
@@ -1239,10 +1287,6 @@ int main()
 	// cudaDeviceProp props;
 	// cudaGetDeviceProperties(&props, 0);
 	// std::cout << props.sharedMemPerBlock << '\n';
-
-	// float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
-	// Tensor B_matrix {4, 4};
-	// B_matrix.write(map_transform_matrix_values);
 
 	// Tensor input {4, 4};
 	// Tensor result {8, 8};
