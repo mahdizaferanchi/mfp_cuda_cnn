@@ -309,9 +309,11 @@ __global__ void convmulfc(Tensor acts, Tensor weights, Tensor out)
 	if (1)
 	{
 		float result = 0.0f;
-		for (int loopIdx = 0; loopIdx < acts.width; ++loopIdx)
+		for (int loopIdx = 0; loopIdx < acts.width * acts.height * acts.depth; ++loopIdx)
 		{
-			result += *acts.at(i, loopIdx) * (*weights.at(loopIdx, j));
+			result += *acts.where(loopIdx, i) * (*weights.at(loopIdx, j));
+			// result += *weights.at(loopIdx, j);
+			// result += 0;
 		}
 		*out.at(i, j) = result;
 	}
@@ -728,6 +730,8 @@ public:
 			0, 
 			s>>>
 			(pre_activations, activations);
+		cudaDeviceSynchronize();
+		std::cout << activations << '\n';
 	}
 	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
 	{
@@ -753,6 +757,7 @@ public:
 	void set_input_props(const Layer& ll)
 	{
 		input_length = ll.get_output_size() + ll.get_output_bias_size();
+		std::cout << input_length << '\n';
 		weights = Tensor(input_length, units);
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -794,20 +799,33 @@ public:
 	void forward(Tensor& input, cudaStream_t s)
 	{
 		convmulfc<<<
-			get_grids(input.height * input.width * input.depth, input.width),
-			get_threads(input.height * input.width * input.depth, input.width),
+			get_grids(input.fourth, units),
+			get_threads(input.fourth, units),
 			0, 
 			s>>>
 			(input, weights, pre_activations);
 		act.f<<<
-			get_grids(input.height * input.width * input.depth, input.width),
-			get_threads(input.height * input.width * input.depth, input.width), 
+			get_grids(input.fourth, units),
+			get_threads(input.fourth, units), 
 			0, 
 			s>>>
 			(pre_activations, activations);
 		cudaDeviceSynchronize();
 		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-		std::cout << pre_activations << '\n';
+		// std::cout << input << '\n';
+		// std::cout << weights << '\n';
+		// std::cout << pre_activations << '\n';
+		std::cout << activations << '\n';
+	}
+
+	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
+	{
+		activations = Tensor(batch_size, units + 1, 1, 1, true);
+		pre_activations = Tensor(batch_size, units, 1, 1, true);
+		errors = Tensor(batch_size, units, 1, 1, true);
+		if (double_activations)
+			activations_alt = Tensor(batch_size, units + 1, 1, 1, true);
+		set_input_props(ll);
 	}
 };
 
@@ -912,6 +930,7 @@ public:
 	}
 	void set_input_props(const Layer& ll)
 	{
+		std::cout << "conv set input props called \n";
 		weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
 		size_t tile_dim = weights.height + 2 - 1;
 		transformed_weights = Tensor(tile_dim, tile_dim, ll.get_depth(), filter_quantity);
