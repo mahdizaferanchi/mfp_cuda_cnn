@@ -232,8 +232,10 @@ public:
 			{
 				os << "depth " << d << '\n';
 				for (int i = 0; i < mat.height; ++i)
+				// for (int j = 0; j < mat.width; ++j)
 				{
 					for (int j = 0; j < mat.width; ++j)
+					// for (int i = 0; i < mat.height; ++i)
 					{
 						os << std::setw(10) << result[f * mat.depth * mat.height * mat.width + d * mat.height * mat.width + i * mat.width + j] << ", ";
 					}
@@ -731,7 +733,7 @@ public:
 			s>>>
 			(pre_activations, activations);
 		cudaDeviceSynchronize();
-		std::cout << activations << '\n';
+		// std::cout << activations << '\n';
 	}
 	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
 	{
@@ -757,7 +759,7 @@ public:
 	void set_input_props(const Layer& ll)
 	{
 		input_length = ll.get_output_size() + ll.get_output_bias_size();
-		std::cout << input_length << '\n';
+		// std::cout << input_length << '\n';
 		weights = Tensor(input_length, units);
 	}
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -811,11 +813,11 @@ public:
 			s>>>
 			(pre_activations, activations);
 		cudaDeviceSynchronize();
-		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+		// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 		// std::cout << input << '\n';
 		// std::cout << weights << '\n';
 		// std::cout << pre_activations << '\n';
-		std::cout << activations << '\n';
+		// std::cout << activations << '\n';
 	}
 
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -876,7 +878,7 @@ public:
 			>>>(input, B_matrix, transformed_input);
 
 		cudaDeviceSynchronize();
-		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+		// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 
 		filter_transform<<<
 			1, 
@@ -902,17 +904,17 @@ public:
 			>>>(pre_activations, activations);
 
 		cudaDeviceSynchronize();
-		std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+		// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 
-		std::cout << "Input : \n";
-		std::cout << input << '\n';
+		// std::cout << "Input : \n";
+		// std::cout << input << '\n';
 
 		// std::cout << "**** Transformed Input:\n";
 		// std::cout << transformed_input << '\n';
 		// std::cout << "***\n";
 
-		std::cout << "Weights : \n";
-		std::cout << weights;
+		// std::cout << "Weights : \n";
+		// std::cout << weights;
 
 		// std::cout << "**** Transformed Weights:\n";
 		// std::cout << transformed_weights << '\n';
@@ -921,8 +923,8 @@ public:
 		// std::cout << "after mul : \n";
 		// std::cout << conv_ans << '\n';
 
-		std::cout << "final result: \n";
-		std::cout << activations << '\n';
+		// std::cout << "final result: \n";
+		// std::cout << activations << '\n';
 	}
 	void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
 	{
@@ -930,7 +932,7 @@ public:
 	}
 	void set_input_props(const Layer& ll)
 	{
-		std::cout << "conv set input props called \n";
+		// std::cout << "conv set input props called \n";
 		weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
 		size_t tile_dim = weights.height + 2 - 1;
 		transformed_weights = Tensor(tile_dim, tile_dim, ll.get_depth(), filter_quantity);
@@ -1281,13 +1283,17 @@ int main()
 	PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv");
 	PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
-	// auto layer1 = Regular(784, relu, true);
-	auto layer1 = Convolutional(28, 28);
-	// auto layer2 = Regular(128);
-	auto layer2 = FCfromConv(128);
+	auto layer1 = Regular(784, relu, true);
+	// auto layer1 = Convolutional(28, 28);
+	
+	auto layer2 = Regular(128);
+	// auto layer2 = FCfromConv(128);
 	// auto layer2 = Convolutional(3, {3, 3});
+
 	auto layer3 = Regular(128);
+	// auto layer3 = FCfromConv(128);
 	// auto layer3 = Convolutional(2, {3, 3});
+
 	// auto layer4 = FCfromConv(10, softmax);
 	auto layer4 = Regular(10, softmax);
 
@@ -1297,12 +1303,15 @@ int main()
 	mnist_model.add(layer3);
 	mnist_model.add(layer4);
 
-	mnist_model.finalize(2);
+	mnist_model.finalize(32);
 
-	mnist_model.move_batch(train_images[0], train_labels[0], 2, false);
-	cudaDeviceSynchronize();
-	mnist_model.forward_pass(2, false);
+	// mnist_model.move_batch(train_images[0], train_labels[0], 2, false);
+	// cudaDeviceSynchronize();
+	// mnist_model.forward_pass(2, false);
 
+	// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+	// std::cout << mnist_model.layers[3].get().activations << '\n';
+	
 	// cudaDeviceProp props;
 	// cudaGetDeviceProperties(&props, 0);
 	// std::cout << props.sharedMemPerBlock << '\n';
@@ -1338,7 +1347,8 @@ int main()
 	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
 	// std::cout << ms_double.count() << "ms \n";
 
-	// mnist_model.test(test_images, test_labels, 32);
+	mnist_model.test(test_images, test_labels, 32);
+	std::cout << mnist_model.layers[3].get().activations << '\n';
 
 	return 0;
 }
