@@ -28,6 +28,10 @@
 // std::cout << mnist_model.layers[1].get().weights << '\n';
 // std::cout << mnist_model.layers[0].get().activations << '\n';
 
+// cudaDeviceProp props;
+// cudaGetDeviceProperties(&props, 0);
+// std::cout << props.sharedMemPerBlock << '\n';
+// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 
 // __syncthreads();
 

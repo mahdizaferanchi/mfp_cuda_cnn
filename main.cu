@@ -1278,9 +1278,9 @@ int main()
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv");
+	PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", true);
 	PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-	PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv");
+	PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", true);
 	PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
 	auto layer1 = Regular(784, relu, true);
@@ -1303,36 +1303,13 @@ int main()
 	mnist_model.add(layer3);
 	mnist_model.add(layer4);
 
-	mnist_model.finalize(32);
+	mnist_model.finalize(20);
 
-	// mnist_model.move_batch(train_images[0], train_labels[0], 2, false);
-	// cudaDeviceSynchronize();
-	// mnist_model.forward_pass(2, false);
+	mnist_model.move_batch(train_images[0], train_labels[0], 20, false);
+	cudaDeviceSynchronize();
+	mnist_model.forward_pass(20, false);
 
-	// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-	// std::cout << mnist_model.layers[3].get().activations << '\n';
-	
-	// cudaDeviceProp props;
-	// cudaGetDeviceProperties(&props, 0);
-	// std::cout << props.sharedMemPerBlock << '\n';
-
-	// Tensor input {4, 4};
-	// Tensor result {8, 8};
-	
-	// map_transform<<<
-	// 	1,
-	// 	dim3(2, 2),
-	// 	64
-	// 	>>>(input, B_matrix, result);
-
-	// std::cout << input << '\n';
-	// std::cout << result << '\n';
-
-	// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-	// std::cout << mnist_model.layers.front().get().get_output_size() << '\n';
-	// std::cout << mnist_model.layers.front().get().get_output_bias_size() << '\n';
-	// std::cout << mnist_model.layers.front().get().activations.pitch << '\n';
-	// std::cout << mnist_model.layers[0].get().activations << '\n';
+	std::cout << mnist_model.layers[1].get().activations << '\n';
 
 	// auto tik = std::chrono::high_resolution_clock::now();
 	// mnist_model.train(train_images, train_labels, 7, 32);
@@ -1347,8 +1324,7 @@ int main()
 	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
 	// std::cout << ms_double.count() << "ms \n";
 
-	mnist_model.test(test_images, test_labels, 32);
-	std::cout << mnist_model.layers[3].get().activations << '\n';
+	// mnist_model.test(test_images, test_labels, 20);
 
 	return 0;
 }
