@@ -1278,16 +1278,16 @@ int main()
 	std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
 	std::rand(); 
 
-	PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", true);
+	PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv");
 	PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-	PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", true);
+	PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv");
 	PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
-	auto layer1 = Regular(784, relu, true);
-	// auto layer1 = Convolutional(28, 28);
+	// auto layer1 = Regular(784, relu, true);
+	auto layer1 = Convolutional(28, 28);
 	
-	auto layer2 = Regular(128);
-	// auto layer2 = FCfromConv(128);
+	// auto layer2 = Regular(128);
+	auto layer2 = FCfromConv(128);
 	// auto layer2 = Convolutional(3, {3, 3});
 
 	auto layer3 = Regular(128);
@@ -1303,28 +1303,30 @@ int main()
 	mnist_model.add(layer3);
 	mnist_model.add(layer4);
 
-	mnist_model.finalize(20);
+	size_t mini_batch_size {16};
 
-	mnist_model.move_batch(train_images[0], train_labels[0], 20, false);
-	cudaDeviceSynchronize();
-	mnist_model.forward_pass(20, false);
+	mnist_model.finalize(mini_batch_size);
 
-	std::cout << mnist_model.layers[1].get().activations << '\n';
+	// mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+	// cudaDeviceSynchronize();
+	// mnist_model.forward_pass(mini_batch_size, false);
+
+	// std::cout << mnist_model.layers[1].get().weights << '\n';
 
 	// auto tik = std::chrono::high_resolution_clock::now();
-	// mnist_model.train(train_images, train_labels, 7, 32);
+	// mnist_model.train(train_images, train_labels, 7, mini_batch_size);
 
 	// mnist_model.learning_rate = 0.001f;
-	// mnist_model.train(train_images, train_labels, 5, 32);
+	// mnist_model.train(train_images, train_labels, 5, mini_batch_size);
 
 	// mnist_model.learning_rate = 0.0001f;
-	// mnist_model.train(train_images, train_labels, 5, 32);
+	// mnist_model.train(train_images, train_labels, 5, mini_batch_size);
 
 	// auto tok = std::chrono::high_resolution_clock::now();
 	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
 	// std::cout << ms_double.count() << "ms \n";
 
-	// mnist_model.test(test_images, test_labels, 20);
+	mnist_model.test(test_images, test_labels, mini_batch_size);
 
 	return 0;
 }
