@@ -1303,9 +1303,10 @@ int main()
 	mnist_model.add(layer3);
 	mnist_model.add(layer4);
 
-	size_t mini_batch_size {16};
+	size_t mini_batch_size {32};
 
 	mnist_model.finalize(mini_batch_size);
+	
 
 	// mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
 	// cudaDeviceSynchronize();

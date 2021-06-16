@@ -1,3 +1,34 @@
+// mnist_model.reset_correct_predictions();
+// mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
+// mnist_model.single_test(test_images[mini_batch_size], test_labels[mini_batch_size], mini_batch_size);
+// // std::cout << mnist_model.layers[3].get().activations << '\n';
+// float* results = mnist_model.layers[3].get().activations.read();
+// for (int i = 0; i < 1 * mini_batch_size; ++i)
+// {
+// 	float max = 0;
+// 	int maxIdx = 0;
+// 	for (int j = 0; j < 10; ++j)
+// 	{
+// 		// std::cout << results[i* 11 + j] << ", ";
+// 		if (max < results[i * 11 + j])
+// 		{
+// 			max = results[i * 11 + j];
+// 			maxIdx = j;
+// 			// std::cout << results[i * 11 + j] << ", ";
+// 			// std::cout << max << ", ";
+// 		}
+// 	}
+// 	std::cout << maxIdx << ", ";
+// }
+// std::cout << '\n';
+// for (int i = mini_batch_size; i < 2 * mini_batch_size; ++i)
+// {
+// 	std::cout << *test_labels[i] << ", ";
+// }
+// std::cout << '\n';
+// std::cout << "test acc = " << mnist_model.read_correct_predictions()/(float)mini_batch_size << '\n';
+// std::cout << "test acc = " << mnist_model.read_correct_predictions() << '\n';
+
 // for (int i = 0; i < 30; ++i)
 // {
 // 	mnist_model.forward_pass(train_data[i].image);
