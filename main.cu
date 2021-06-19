@@ -321,6 +321,13 @@ __global__ void convmulfc(Tensor acts, Tensor weights, Tensor out)
 	}
 }
 
+__global__ void simple_bias(Tensor in, Tensor biases, Tensor out)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	*out.at(i, j) = *in.at(i, j) + *biases.at(0, j);
+}
+
 __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out) 
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -795,6 +802,7 @@ public:
 class FCfromConv : public Regular
 {
 public:
+	Tensor biases {1, 1};
 	FCfromConv(size_t p_units=16, Activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
 	Regular(p_units, act_p, p_double_activations, p_input_length)
 	{}
@@ -806,6 +814,12 @@ public:
 			0, 
 			s>>>
 			(input, weights, pre_activations);
+		simple_bias<<<
+			get_grids(activations.height, activations.width),
+			get_threads(activations.height, activations.width),
+			0,
+			s>>>
+			(pre_activations, biases, pre_activations);
 		act.f<<<
 			get_grids(input.fourth, units),
 			get_threads(input.fourth, units), 
@@ -817,12 +831,14 @@ public:
 		// std::cout << input << '\n';
 		// std::cout << weights << '\n';
 		// std::cout << pre_activations << '\n';
-		// std::cout << activations << '\n';
+		std::cout << activations << '\n';
 	}
 
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
 		activations = Tensor(batch_size, units + 1, 1, 1, true);
+		biases = Tensor(1, units);
+		// std::cout << biases << '\n';
 		pre_activations = Tensor(batch_size, units, 1, 1, true);
 		errors = Tensor(batch_size, units, 1, 1, true);
 		if (double_activations)
@@ -1327,7 +1343,7 @@ int main()
 	// std::chrono::duration<double, std::milli> ms_double = tok - tik;
 	// std::cout << ms_double.count() << "ms \n";
 
-	mnist_model.test(test_images, test_labels, mini_batch_size);
+	// mnist_model.test(test_images, test_labels, mini_batch_size);
 
 	return 0;
 }
