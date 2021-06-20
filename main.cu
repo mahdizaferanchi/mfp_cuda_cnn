@@ -826,19 +826,13 @@ public:
 			0, 
 			s>>>
 			(pre_activations, activations);
-		cudaDeviceSynchronize();
-		// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-		// std::cout << input << '\n';
-		// std::cout << weights << '\n';
-		// std::cout << pre_activations << '\n';
-		std::cout << activations << '\n';
+		// cudaDeviceSynchronize();
 	}
 
 	void initialize_with_batch_size(size_t batch_size, const Layer& ll)
 	{
 		activations = Tensor(batch_size, units + 1, 1, 1, true);
 		biases = Tensor(1, units);
-		// std::cout << biases << '\n';
 		pre_activations = Tensor(batch_size, units, 1, 1, true);
 		errors = Tensor(batch_size, units, 1, 1, true);
 		if (double_activations)
@@ -1324,9 +1318,9 @@ int main()
 	mnist_model.finalize(mini_batch_size);
 	
 
-	// mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-	// cudaDeviceSynchronize();
-	// mnist_model.forward_pass(mini_batch_size, false);
+	mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+	cudaDeviceSynchronize();
+	mnist_model.forward_pass(mini_batch_size, false);
 
 	// std::cout << mnist_model.layers[1].get().weights << '\n';
 
