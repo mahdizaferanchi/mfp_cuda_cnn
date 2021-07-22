@@ -343,7 +343,7 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
 	int j = blockIdx.y * blockDim.y + threadIdx.y;
 	int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-	__shared__ float intermediate[4][3][3][3];//probably should be parametrized in the future
+	__shared__ float intermediate[4][3][3][3];//probably should be parametrized in the future (can't just put in.*** here though so ...)
 
 	if (i < t_mat.height && j < in.width)
 	{
