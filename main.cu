@@ -258,6 +258,15 @@ public:
 	{
 		return (float*)((char*)d_copy + (idx / width + block * height * depth) * pitch) + (idx % width);
 	}
+
+  __device__ __forceinline__ float* at_flipped(int row, int col, int page=0, int block=0)
+  {
+    if (row < 0 || row > height || col < 0 || col > width)
+    {
+      return zero;
+    }
+    return (float*)((char*)d_copy + (block * height * depth + page * height + (height - row)) * pitch) + (width - col);
+  }
 };
 
 __global__ void matmulvec(float* mat, float* vec, int height, int width, float* out)
@@ -900,6 +909,7 @@ public:
 			dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
 			dim3(transformed_input.height / 4, transformed_input.width / 4)
 			>>>(transformed_input, transformed_weights, conv_ans);
+    // wts = winograd transform space
 
 		Tensor result {conv_ans.height / 2, conv_ans.width / 2, conv_ans.depth, conv_ans.fourth};
 
