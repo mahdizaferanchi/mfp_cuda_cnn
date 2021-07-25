@@ -549,6 +549,26 @@ __global__ void conv_relu_kernel(Tensor in, Tensor out)
   }
 }
 
+__global__ void conv_relu_derivative(Tensor in, Tensor out)
+{
+  int xIdx = (blockIdx.x * blockDim.x + threadIdx.x) * 2;
+  int yIdx = (blockIdx.y * blockDim.y + threadIdx.y) * 2;
+  int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+  int dim = 2;
+
+  for (int vIdx = 0; vIdx < dim; ++vIdx)
+  {
+    for (int hIdx = 0; hIdx < dim; ++hIdx)
+    {
+      *out.at(yIdx + vIdx, xIdx + hIdx, k % in.depth, k / in.depth) = 
+        (*in.at(yIdx + vIdx, xIdx + hIdx, k % in.depth, k / in.depth) < 0.0f) ? 
+          0.0f : 
+          1.0f;
+    }
+  }
+}
+
 __global__ void wts_input_mul_filter(Tensor map, Tensor filter, Tensor out) // wts = winograd transform space
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -608,9 +628,13 @@ __global__ void elementwisemul(Tensor left, Tensor right, Tensor out)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
+  int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+  int mapIdx = k / left.fourth;
+  int filterIdx = k % left.fourth;
 
   if (i < left.height && j < left.width)
-    *out.at(i, j) = *left.at(i, j) * (*right.at(i, j));
+    *out.at(i, j, filterIdx, mapIdx) = *left.at(i, j, filterIdx, mapIdx) * (*right.at(i, j, filterIdx, mapIdx));
 }
 
 __global__ void relu_derivative(Tensor in, Tensor out)
@@ -718,10 +742,11 @@ Activation relu(relu_kernel, relu_derivative);
 Activation softmax(softmax_kernel, relu_derivative);
 // activation sigmoid(sigmoid_kernel, sigmoid_derivative);
 
-dim3 get_grids(size_t x_dim, size_t y_dim)
+dim3 get_grids(size_t x_dim, size_t y_dim, size_t z_dim=1)
 {
-  return dim3((x_dim > 40) ? x_dim / 20 + 1 : 2, (y_dim > 40) ? y_dim / 20 + 1 : 2);
+  return dim3((x_dim > 40) ? x_dim / 20 + 1 : 2, (y_dim > 40) ? y_dim / 20 + 1 : 2, z_dim);
 }
+
 
 dim3 get_threads(size_t x_dim, size_t y_dim)
 {
@@ -924,7 +949,12 @@ public:
     G_matrix.write(filter_transform_matrix_values);
     float inverse_transform_matrix_values[8] {1, 1, 1, 0,  0, 1, -1, -1};
     A_matrix.write(inverse_transform_matrix_values);
-
+    float inverse_transform_matrix_values2[12] {1, 1, 1, 0, 0, 1, -1, 0, 0, 1, 1, 1};
+    A2_matrix.write(inverse_transform_matrix_values2);
+    float map_transform_matrix_values2[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, -1, 0, 1};
+    B2_matrix.write(map_transform_matrix_values2);
+    float flipped_filter_transform_matrix_values[8] {1, 0, 0.5, 0.5, 0.5, -0.5, 0, 1};
+    G2_matrix.write(flipped_filter_transform_matrix_values);
   }
   void forward(Tensor& input, cudaStream_t s)
   {
@@ -962,28 +992,6 @@ public:
       >>>(pre_activations, activations);
 
     cudaDeviceSynchronize();
-    
-    // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-
-    // std::cout << "Input : \n";
-    // std::cout << input << '\n';
-
-    // std::cout << "**** Transformed Input:\n";
-    // std::cout << transformed_input << '\n';
-    // std::cout << "***\n";
-
-    // std::cout << "Weights : \n";
-    // std::cout << weights;
-
-    // std::cout << "**** Transformed Weights:\n";
-    // std::cout << transformed_weights << '\n';
-    // std::cout << "***\n";
-
-    // std::cout << "after mul : \n";
-    // std::cout << conv_ans << '\n';
-
-    // std::cout << "final result: \n";
-    // std::cout << activations << '\n';
   }
   void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
@@ -1005,8 +1013,22 @@ public:
       >>>(transfromed_nle, transformed_flipped_weights, conv_ans);
 
     Tensor result {conv_ans.height / 2, conv_ans.width / 2, conv_ans.depth, conv_ans.fourth};
+    inverse_transform<<<
+      dim3(1, 1, conv_ans.depth * conv_ans.fourth),
+      dim3(conv_ans.height / 4, conv_ans.width / 4)
+      >>>(conv_ans, A2_matrix, errors);
 
+    conv_relu_derivative<<<
+      dim3(1, 1, pre_activations.depth * pre_activations.fourth),
+      dim3(pre_activations.height / 2, pre_activations.width / 2)
+      >>>(pre_activations, pre_activations);
+
+    elementwisemul<<<
+      get_grids(errors.height, errors.width, errors.depth * errors.fourth),
+      get_threads(errors.height, errors.width)
+    >>>(errors, pre_activations, errors);
   }
+
   void set_input_props(const Layer& ll)
   {
     // std::cout << "conv set input props called \n";
@@ -1364,12 +1386,12 @@ int main()
   auto layer1 = Convolutional(28, 28);
   
   // auto layer2 = Regular(128);
-  auto layer2 = FCfromConv(128);
-  // auto layer2 = Convolutional(3, {3, 3});
+  // auto layer2 = FCfromConv(128);
+  auto layer2 = Convolutional(3, {3, 3});
 
-  auto layer3 = Regular(128);
+  // auto layer3 = Regular(128);
   // auto layer3 = FCfromConv(128);
-  // auto layer3 = Convolutional(2, {3, 3});
+  auto layer3 = Convolutional(2, {3, 3});
 
   // auto layer4 = FCfromConv(10, softmax);
   auto layer4 = Regular(10, softmax);
@@ -1380,13 +1402,27 @@ int main()
   mnist_model.add(layer3);
   mnist_model.add(layer4);
 
-  size_t mini_batch_size {32};
+  size_t mini_batch_size {2};
 
   mnist_model.finalize(mini_batch_size);
 
   mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   cudaDeviceSynchronize();
   mnist_model.forward_pass(mini_batch_size, false);
+
+  Tensor fake_nle {3, 3, 2, mini_batch_size};
+  Tensor fake_nlw {3, 3, 2, mini_batch_size};
+  mnist_model.layers[1].get().backward(
+    mnist_model.layers[2].get().weights,
+    mnist_model.layers[2].get().errors,
+    mnist_model.kernel_exec_s
+  );
+  
+  std::cout << mnist_model.layers[2].get().errors << '\n';
+  std::cout << mnist_model.layers[2].get().weights << '\n';
+  std::cout << mnist_model.layers[1].get().errors << '\n';
+  std::cout << mnist_model.layers[1].get().activations << '\n';
+  std::cout << mnist_model.layers[1].get().pre_activations << '\n';
 
   // std::cout << mnist_model.layers[1].get().weights << '\n';
 

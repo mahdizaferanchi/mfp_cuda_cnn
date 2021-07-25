@@ -336,3 +336,25 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 		}
 	}	
 }
+
+// std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+
+// std::cout << "Input : \n";
+// std::cout << input << '\n';
+
+// std::cout << "**** Transformed Input:\n";
+// std::cout << transformed_input << '\n';
+// std::cout << "***\n";
+
+// std::cout << "Weights : \n";
+// std::cout << weights;
+
+// std::cout << "**** Transformed Weights:\n";
+// std::cout << transformed_weights << '\n';
+// std::cout << "***\n";
+
+// std::cout << "after mul : \n";
+// std::cout << conv_ans << '\n';
+
+// std::cout << "final result: \n";
+// std::cout << activations << '\n';
