@@ -597,6 +597,34 @@ __global__ void wts_input_mul_filter(Tensor map, Tensor filter, Tensor out) // w
   }	
 }
 
+__global__ void wts_nle_mul_nlw(Tensor map, Tensor filter, Tensor out) // wts = winograd transform space
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+  int xIdx = i * 4;
+  int yIdx = j * 4;
+  int mapIdx = k / filter.fourth;
+  int filterIdx = k % filter.fourth;
+
+  int alpha = filter.height;
+
+  for (int vIdx = 0; vIdx < alpha; ++vIdx)
+  {
+    for (int hIdx = 0; hIdx < alpha; ++hIdx)
+    {
+      float result = 0;
+      for (int loopIdx = 0; loopIdx < filter.depth; ++loopIdx)
+      {
+        result += *map.at(yIdx + vIdx, xIdx + hIdx, loopIdx, mapIdx) * (*filter.at(vIdx, hIdx, loopIdx, loopIdx));
+        // result += *map.at(yIdx + vIdx, xIdx + hIdx, loopIdx, 0) * (*filter.at(vIdx, hIdx, loopIdx, 0));
+      }
+      *out.at(yIdx + vIdx, xIdx + hIdx, filterIdx, mapIdx) = result;
+    }
+  }	
+}
+
 __global__ void relu_kernel(Tensor in, Tensor out)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1421,8 +1449,8 @@ int main()
   std::cout << mnist_model.layers[2].get().errors << '\n';
   std::cout << mnist_model.layers[2].get().weights << '\n';
   std::cout << mnist_model.layers[1].get().errors << '\n';
-  std::cout << mnist_model.layers[1].get().activations << '\n';
-  std::cout << mnist_model.layers[1].get().pre_activations << '\n';
+  // std::cout << mnist_model.layers[1].get().activations << '\n';
+  // std::cout << mnist_model.layers[1].get().pre_activations << '\n';
 
   // std::cout << mnist_model.layers[1].get().weights << '\n';
 
