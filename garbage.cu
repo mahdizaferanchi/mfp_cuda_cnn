@@ -1,3 +1,20 @@
+Tensor sample_filter {3, 3, 1, 2};
+Tensor trans_filter {4, 4, 1, 2};
+float vals[18] {2, 3, 4, 1, 0, 2, 1, 1, 1, 9, 0, 0, 0, 0.3, 0.1, 1, 1, 1};
+sample_filter.write(vals);
+
+Tensor G_matrix {4, 3};
+float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
+G_matrix.write(filter_transform_matrix_values);
+
+flipped_filter_transform<<<
+	1,
+	dim3(4, 4, 2)
+>>>(sample_filter, G_matrix, trans_filter);
+std::cout << sample_filter << '\n';
+std::cout << trans_filter << '\n';
+
+
 // mnist_model.reset_correct_predictions();
 // mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
 // mnist_model.single_test(test_images[mini_batch_size], test_labels[mini_batch_size], mini_batch_size);
