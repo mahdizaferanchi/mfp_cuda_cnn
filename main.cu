@@ -658,11 +658,11 @@ __global__ void elementwisemul(Tensor left, Tensor right, Tensor out)
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-  int mapIdx = k / left.fourth;
-  int filterIdx = k % left.fourth;
+  int depthIdx = k / left.fourth;
+  int fourthIdx = k % left.fourth;
 
   if (i < left.height && j < left.width)
-    *out.at(i, j, filterIdx, mapIdx) = *left.at(i, j, filterIdx, mapIdx) * (*right.at(i, j, filterIdx, mapIdx));
+    *out.at(i, j, depthIdx, fourthIdx) = *left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx));
 }
 
 __global__ void relu_derivative(Tensor in, Tensor out)
@@ -1022,7 +1022,7 @@ public:
     cudaDeviceSynchronize();
   }
 
-  void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
+  void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) // convback
   {
     Tensor transformed_flipped_weights {nlw.height + 2 - 1, nlw.width + 2 - 1, nlw.depth, nlw.fourth};
     Tensor transfromed_nle {nle.height * 2, nle.width * 2, nle.depth, nle.fourth};
@@ -1031,15 +1031,12 @@ public:
       dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth * transformed_flipped_weights.fourth)
     >>>(nlw, G_matrix, transformed_flipped_weights);
     cudaDeviceSynchronize();
-    std::cout << nlw << '\n';
 
     map_transform<<<
       dim3(1, 1, nle.depth * nle.fourth),
       dim3(nle.height / 2, nle.width / 2)
     >>>(nle, B_matrix, transfromed_nle);
     cudaDeviceSynchronize();
-    std::cout << nlw << '\n';
-    // std::cout << transfromed_nle << '\n';
 
     Tensor conv_ans {transfromed_nle.height, transfromed_nle.width, errors.depth, transfromed_nle.fourth};
     wts_nle_mul_nlw<<<
@@ -1048,7 +1045,6 @@ public:
     >>>(transfromed_nle, transformed_flipped_weights, conv_ans);
 
     cudaDeviceSynchronize();
-    std::cout << nlw << '\n';
     
     Tensor result {conv_ans.height / 2, conv_ans.width / 2, conv_ans.depth, conv_ans.fourth};
     inverse_transform<<<
@@ -1057,8 +1053,6 @@ public:
     >>>(conv_ans, A_matrix, errors);
 
     cudaDeviceSynchronize();
-    std::cout << nlw << '\n';
-    // std::cout << errors << '\n';
 
     conv_relu_derivative<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
@@ -1066,12 +1060,16 @@ public:
     >>>(pre_activations, pre_activations);
 
     cudaDeviceSynchronize();
-    std::cout << nlw << '\n';
+    
     elementwisemul<<<
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
       get_threads(errors.height, errors.width)
     >>>(errors, pre_activations, errors);
-    std::cout << nlw << '\n';
+
+    // std::cout << nle << '\n';
+    // std::cout << transformed_flipped_weights << '\n';
+    // std::cout << transfromed_nle << '\n';
+    
   }
 
   void set_input_props(const Layer& ll)
@@ -1461,7 +1459,6 @@ int main()
 
   // Tensor fake_nle {3, 3, 2, mini_batch_size};
   // Tensor fake_nlw {3, 3, 2, mini_batch_size};
-  std::cout << mnist_model.layers[2].get().weights << '\n';
 
   mnist_model.layers[1].get().backward(
     mnist_model.layers[2].get().weights,
@@ -1471,14 +1468,6 @@ int main()
 
   cudaDeviceSynchronize();
   
-  // std::cout << mnist_model.layers[2].get().errors << '\n';
-  std::cout << mnist_model.layers[2].get().weights << '\n';
-  // std::cout << mnist_model.layers[1].get().errors << '\n';
-  // std::cout << mnist_model.layers[1].get().activations << '\n';
-  // std::cout << mnist_model.layers[1].get().pre_activations << '\n';
-
-  // std::cout << mnist_model.layers[1].get().weights << '\n';
-
   // auto tik = std::chrono::high_resolution_clock::now();
   // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
 
