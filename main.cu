@@ -313,6 +313,21 @@ __global__ void matmulmatT(Tensor left, Tensor right, Tensor out)
   }
 }
 
+__global__ void matmulmatTtoconv(Tensor left, Tensor right, Tensor out)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  if (i < left.height && j < right.height)
+  {
+    float result = 0.0f;
+    for (int loopIdx = 0; loopIdx < left.width; ++loopIdx)
+    {
+      result += *left.at(i, loopIdx) * (*right.at(j, loopIdx));
+    }
+    *out.where(i, j) = result;
+  }
+}
+
 __global__ void convmulfc(Tensor acts, Tensor weights, Tensor out)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1022,7 +1037,7 @@ public:
     cudaDeviceSynchronize();
   }
 
-  void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) // convback
+  void backward_conv(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
     Tensor transformed_flipped_weights {nlw.height + 2 - 1, nlw.width + 2 - 1, nlw.depth, nlw.fourth};
     Tensor transfromed_nle {nle.height * 2, nle.width * 2, nle.depth, nle.fourth};
@@ -1065,11 +1080,42 @@ public:
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
       get_threads(errors.height, errors.width)
     >>>(errors, pre_activations, errors);
+  }
 
-    // std::cout << nle << '\n';
-    // std::cout << transformed_flipped_weights << '\n';
-    // std::cout << transfromed_nle << '\n';
-    
+  void backward_fc(Tensor& nlw, Tensor& nle, cudaStream_t s)
+  {
+    std::cout << nlw << '\n';
+    std::cout << nle << '\n';
+
+    matmulmatTtoconv<<<
+      get_grids(nle.height, get_output_size()), 
+      get_threads(nle.height, get_output_size()) 
+    >>>(nle, nlw, errors);
+
+    cudaDeviceSynchronize();
+    std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+    std::cout << errors << '\n';
+
+    conv_relu_derivative<<<
+      dim3(1, 1, pre_activations.depth * pre_activations.fourth),
+      dim3(pre_activations.height / 2, pre_activations.width / 2)
+    >>>(pre_activations, pre_activations);
+
+    elementwisemul<<<
+      get_grids(errors.height, errors.width, errors.depth * errors.fourth),
+      get_threads(errors.height, errors.width)
+    >>>(errors, pre_activations, errors);
+  }
+
+  void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) // convback
+  {
+    bool is_next_layer_fcfc = (nle.fourth == 1);
+    if (is_next_layer_fcfc)
+    {
+      backward_fc(nlw, nle, s);
+    } else {
+      backward_conv(nlw, nle, s);
+    }
   }
 
   void set_input_props(const Layer& ll)
@@ -1438,8 +1484,8 @@ int main()
   // auto layer3 = FCfromConv(128);
   auto layer3 = Convolutional(2, {3, 3});
 
-  // auto layer4 = FCfromConv(10, softmax);
-  auto layer4 = Regular(10, softmax);
+  auto layer4 = FCfromConv(10, softmax);
+  // auto layer4 = Regular(10, softmax);
 
   Model mnist_model(cross_entropy, 0.05f);
   mnist_model.add(layer1);
@@ -1460,13 +1506,22 @@ int main()
   // Tensor fake_nle {3, 3, 2, mini_batch_size};
   // Tensor fake_nlw {3, 3, 2, mini_batch_size};
 
-  mnist_model.layers[1].get().backward(
-    mnist_model.layers[2].get().weights,
-    mnist_model.layers[2].get().errors,
+  // mnist_model.layers[1].get().backward(
+  //   mnist_model.layers[2].get().weights,
+  //   mnist_model.layers[2].get().errors,
+  //   mnist_model.kernel_exec_s
+  // );
+
+  mnist_model.layers[2].get().backward(
+    mnist_model.layers[3].get().weights,
+    mnist_model.layers[3].get().errors,
     mnist_model.kernel_exec_s
   );
 
   cudaDeviceSynchronize();
+
+  // std::cout << mnist_model.layers[1].get().errors << '\n';
+  // std::cout << mnist_model.layers[2].get().weights << '\n';
   
   // auto tik = std::chrono::high_resolution_clock::now();
   // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
