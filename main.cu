@@ -324,7 +324,7 @@ __global__ void matmulmatTtoconv(Tensor left, Tensor right, Tensor out)
     {
       result += *left.at(i, loopIdx) * (*right.at(j, loopIdx));
     }
-    *out.where(i, j) = result;
+    *out.where(j, i) = result;
   }
 }
 
@@ -812,6 +812,7 @@ public:
   {}
   virtual void forward(Tensor& input, cudaStream_t s) = 0;
   virtual void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) = 0;
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
   virtual void set_input_props(const Layer& lla) = 0;
   virtual void initialize_with_batch_size(size_t batch_size, const Layer& ll) = 0;
   virtual size_t get_output_size() const = 0;
@@ -869,6 +870,17 @@ public:
       s
     >>>(errors, pre_activations, errors);
   }
+
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream)
+  {
+    weight_update_kernel<<<
+      get_grids(weights.height, weights.width),
+      get_threads(weights.height, weights.width),
+      0, 
+      stream
+    >>>(errors, (l - 1)->get().activations, weights, learning_rate);
+  }
+
   void set_input_props(const Layer& ll)
   {
     input_length = ll.get_output_size() + ll.get_output_bias_size();
@@ -933,6 +945,11 @@ public:
    		s
     >>>(pre_activations, activations);
     // cudaDeviceSynchronize();
+  }
+
+void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
+  {
+    std::cout << "not implimented\n";
   }
 
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -1116,6 +1133,11 @@ public:
     } else {
       backward_conv(nlw, nle, s);
     }
+  }
+
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
+  {
+    std::cout << "not implimented\n";
   }
 
   void set_input_props(const Layer& ll)
@@ -1314,12 +1336,13 @@ public:
     >>>(layers[1].get().errors, input_activations, layers[1].get().weights, learning_rate);
     for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
     {
-      weight_update_kernel<<<
-        get_grids(l->get().weights.height, l->get().weights.width),
-        get_threads(l->get().weights.height, l->get().weights.width),
-        0, 
-        kernel_exec_s
-      >>>(l->get().errors, (l - 1)->get().activations, l->get().weights, learning_rate); 
+      // weight_update_kernel<<<
+      //   get_grids(l->get().weights.height, l->get().weights.width),
+      //   get_threads(l->get().weights.height, l->get().weights.width),
+      //   0, 
+      //   kernel_exec_s
+      // >>>(l->get().errors, (l - 1)->get().activations, l->get().weights, learning_rate); 
+      let().update_weights(l - 1, learning_rate, kernel_exec_s);
     }
   }
   void single_train_timed(float* image, int* label, size_t batch_size)
