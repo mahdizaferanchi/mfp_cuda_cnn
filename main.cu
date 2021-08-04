@@ -758,6 +758,36 @@ __global__ void weight_update_kernel(Tensor errors, Tensor last_activations, Ten
   }
 }
 
+__global__ void weight_update_kernel_from_conv(Tensor errors, Tensor last_activations, Tensor weights, float learning_rate)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  if (i < weights.height && j < weights.width)
+  {
+    float result = 0.0f;
+    for (int loopIdx = 0; loopIdx < errors.height; ++loopIdx)
+    {
+      result += *last_activations.where(i, loopIdx) * (*errors.at(loopIdx, j));
+    }
+    *weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
+  }
+}
+__global__ void weight_update_kernel_for_conv(Tensor errors, Tensor last_activations, Tensor weights, float learning_rate)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  if (i < 3 && j < 3)
+  {
+    float result = 0.0f;
+    for (int loopIdx = 0; loopIdx < errors.height; ++loopIdx)
+    {
+      result += *last_activations.where(0, 0) * (*errors.at(0, 0));
+    }
+    // *weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
+    *weights.where(i, j) = 0;
+  }
+}
+
 __global__ void update_correct_labels(Tensor acts, int* labels, int* correct_predictions)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -812,7 +842,7 @@ public:
   {}
   virtual void forward(Tensor& input, cudaStream_t s) = 0;
   virtual void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) = 0;
-  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
+  virtual void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
   virtual void set_input_props(const Layer& lla) = 0;
   virtual void initialize_with_batch_size(size_t batch_size, const Layer& ll) = 0;
   virtual size_t get_output_size() const = 0;
@@ -878,7 +908,7 @@ public:
       get_threads(weights.height, weights.width),
       0, 
       stream
-    >>>(errors, (l - 1)->get().activations, weights, learning_rate);
+    >>>(errors, (ll_iterator - 1)->get().activations, weights, learning_rate);
   }
 
   void set_input_props(const Layer& ll)
@@ -947,9 +977,14 @@ public:
     // cudaDeviceSynchronize();
   }
 
-void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream)
   {
-    std::cout << "not implimented\n";
+    weight_update_kernel_from_conv<<<
+      get_grids(weights.height, weights.width),
+      get_threads(weights.height, weights.width),
+      0, 
+      stream
+    >>>(errors, (ll_iterator - 1)->get().activations, weights, learning_rate);
   }
 
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -1101,8 +1136,8 @@ public:
 
   void backward_fc(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
-    std::cout << nlw << '\n';
-    std::cout << nle << '\n';
+    // std::cout << nlw << '\n';
+    // std::cout << nle << '\n';
 
     matmulmatTtoconv<<<
       get_grids(nle.height, get_output_size()), 
@@ -1110,8 +1145,8 @@ public:
     >>>(nle, nlw, errors);
 
     cudaDeviceSynchronize();
-    std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-    std::cout << errors << '\n';
+    // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+    // std::cout << errors << '\n';
 
     conv_relu_derivative<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
@@ -1135,9 +1170,14 @@ public:
     }
   }
 
-  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream)
   {
-    std::cout << "not implimented\n";
+    weight_update_kernel_for_conv<<<
+      get_grids(weights.height, weights.width),
+      get_threads(weights.height, weights.width),
+      0, 
+      stream
+    >>>(errors, (ll_iterator - 1)->get().activations, weights, learning_rate);
   }
 
   void set_input_props(const Layer& ll)
@@ -1328,12 +1368,16 @@ public:
   void weight_update(bool use_alt)
   {
     Tensor& input_activations = (use_alt ? layers[0].get().activations_alt : layers[0].get().activations);
-    weight_update_kernel<<<
+    weight_update_kernel_for_conv<<<
       get_grids(layers[1].get().weights.height, layers[1].get().weights.width),
       get_threads(layers[1].get().weights.height, layers[1].get().weights.width),
       0, 
       kernel_exec_s
     >>>(layers[1].get().errors, input_activations, layers[1].get().weights, learning_rate);
+
+    cudaDeviceSynchronize();
+    std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+
     for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
     {
       // weight_update_kernel<<<
@@ -1342,7 +1386,9 @@ public:
       //   0, 
       //   kernel_exec_s
       // >>>(l->get().errors, (l - 1)->get().activations, l->get().weights, learning_rate); 
-      let().update_weights(l - 1, learning_rate, kernel_exec_s);
+      l->get().update_weights(l - 1, learning_rate, kernel_exec_s);
+      cudaDeviceSynchronize();
+      std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
     }
   }
   void single_train_timed(float* image, int* label, size_t batch_size)
@@ -1519,12 +1565,27 @@ int main()
   size_t mini_batch_size {2};
 
   mnist_model.finalize(mini_batch_size);
+  
+  std::cout << mnist_model.layers[3].get().weights << '\n';
 
   mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   cudaDeviceSynchronize();
   mnist_model.forward_pass(mini_batch_size, false);
-
   cudaDeviceSynchronize();
+  mnist_model.backprop(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
+
+
+  // for (std::vector<std::reference_wrapper<Layer>>::iterator l = mnist_model.layers.begin() + 1; l != mnist_model.layers.end(); ++l)
+  // {
+  //   std::cout << l->get().weights << '\n';
+  // }
+
+  std::cout << mnist_model.layers[2].get().activations << '\n';
+  std::cout << mnist_model.layers[3].get().errors << '\n';
+  std::cout << mnist_model.layers[3].get().weights << '\n';
 
   // Tensor fake_nle {3, 3, 2, mini_batch_size};
   // Tensor fake_nlw {3, 3, 2, mini_batch_size};
@@ -1535,11 +1596,11 @@ int main()
   //   mnist_model.kernel_exec_s
   // );
 
-  mnist_model.layers[2].get().backward(
-    mnist_model.layers[3].get().weights,
-    mnist_model.layers[3].get().errors,
-    mnist_model.kernel_exec_s
-  );
+  // mnist_model.layers[2].get().backward(
+  //   mnist_model.layers[3].get().weights,
+  //   mnist_model.layers[3].get().errors,
+  //   mnist_model.kernel_exec_s
+  // );
 
   cudaDeviceSynchronize();
 
