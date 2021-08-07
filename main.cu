@@ -769,7 +769,9 @@ __global__ void weight_update_kernel_from_conv(Tensor errors, Tensor last_activa
     {
       result += *last_activations.where(i, loopIdx) * (*errors.at(loopIdx, j));
     }
-    *weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
+    // *weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
+    // *weights.at(i, j) = result;
+    *weights.at(i, j) = *last_activations.where(i, 0);
   }
 }
 __global__ void weight_update_kernel_for_conv(Tensor errors, Tensor last_activations, Tensor weights, float learning_rate)
@@ -799,6 +801,11 @@ __global__ void update_correct_labels(Tensor acts, int* labels, int* correct_pre
   }
   if (maxIdx == labels[i])//maxIdx == labels[i]
     atomicAdd(correct_predictions, 1);
+}
+
+__global__ void testWhere(Tensor in, size_t index, size_t block)
+{
+  *in.where(index, block) = 666;
 }
 
 class Activation
@@ -1556,7 +1563,8 @@ int main()
   auto layer4 = FCfromConv(10, softmax);
   // auto layer4 = Regular(10, softmax);
 
-  Model mnist_model(cross_entropy, 0.05f);
+  // Model mnist_model(cross_entropy, 0.05f);
+  Model mnist_model(cross_entropy, 2.0f);
   mnist_model.add(layer1);
   mnist_model.add(layer2);
   mnist_model.add(layer3);
@@ -1566,7 +1574,7 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
   
-  std::cout << mnist_model.layers[3].get().weights << '\n';
+  // std::cout << mnist_model.layers[3].get().weights << '\n';
 
   mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   cudaDeviceSynchronize();
@@ -1574,6 +1582,7 @@ int main()
   cudaDeviceSynchronize();
   mnist_model.backprop(mini_batch_size, false);
   cudaDeviceSynchronize();
+  std::cout << mnist_model.layers[2].get().activations << '\n';
   mnist_model.weight_update(false);
   cudaDeviceSynchronize();
 
