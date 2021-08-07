@@ -771,7 +771,7 @@ __global__ void weight_update_kernel_from_conv(Tensor errors, Tensor last_activa
     }
     // *weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
     // *weights.at(i, j) = result;
-    *weights.at(i, j) = *last_activations.where(i, 0);
+    *weights.at(i, j) = (*last_activations.where(i, 0));
   }
 }
 __global__ void weight_update_kernel_for_conv(Tensor errors, Tensor last_activations, Tensor weights, float learning_rate)
@@ -1582,7 +1582,6 @@ int main()
   cudaDeviceSynchronize();
   mnist_model.backprop(mini_batch_size, false);
   cudaDeviceSynchronize();
-  std::cout << mnist_model.layers[2].get().activations << '\n';
   mnist_model.weight_update(false);
   cudaDeviceSynchronize();
 
