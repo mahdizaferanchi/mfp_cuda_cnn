@@ -1140,8 +1140,6 @@ public:
 
   void backward_fc(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
-    // std::cout << nlw << '\n';
-    // std::cout << nle << '\n';
 
     matmulmatTtoconv<<<
       get_grids(nle.height, get_output_size()), 
@@ -1149,8 +1147,6 @@ public:
     >>>(nle, nlw, errors);
 
     cudaDeviceSynchronize();
-    // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-    // std::cout << errors << '\n';
 
     conv_relu_derivative<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
@@ -1379,9 +1375,6 @@ public:
       kernel_exec_s
     >>>(layers[1].get().errors, input_activations, layers[1].get().weights, learning_rate);
 
-    cudaDeviceSynchronize();
-    std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-
     for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
     {
       // weight_update_kernel<<<
@@ -1391,8 +1384,6 @@ public:
       //   kernel_exec_s
       // >>>(l->get().errors, (l - 1)->get().activations, l->get().weights, learning_rate); 
       l->get().update_weights(l - 1, learning_rate, kernel_exec_s);
-      cudaDeviceSynchronize();
-      std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
     }
   }
   void single_train_timed(float* image, int* label, size_t batch_size)
