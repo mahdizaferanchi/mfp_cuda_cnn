@@ -354,6 +354,30 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 	}	
 }
 
+// for (std::vector<std::reference_wrapper<Layer>>::iterator l = mnist_model.layers.begin() + 1; l != mnist_model.layers.end(); ++l)
+// {
+//   std::cout << l->get().weights << '\n';
+// }
+
+// std::cout << mnist_model.layers[2].get().activations << '\n';
+// std::cout << mnist_model.layers[3].get().errors << '\n';
+// std::cout << mnist_model.layers[3].get().weights << '\n';
+
+// Tensor fake_nle {3, 3, 2, mini_batch_size};
+// Tensor fake_nlw {3, 3, 2, mini_batch_size};
+
+// mnist_model.layers[1].get().backward(
+//   mnist_model.layers[2].get().weights,
+//   mnist_model.layers[2].get().errors,
+//   mnist_model.kernel_exec_s
+// );
+
+// mnist_model.layers[2].get().backward(
+//   mnist_model.layers[3].get().weights,
+//   mnist_model.layers[3].get().errors,
+//   mnist_model.kernel_exec_s
+// );
+
 // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 
 // std::cout << "Input : \n";

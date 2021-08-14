@@ -769,9 +769,7 @@ __global__ void weight_update_kernel_from_conv(Tensor errors, Tensor last_activa
     {
       result += *last_activations.where(i, loopIdx) * (*errors.at(loopIdx, j));
     }
-    // *weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
-    // *weights.at(i, j) = result;
-    *weights.at(i, j) = (*last_activations.where(i, 0));
+    *weights.at(i, j) -= learning_rate * result * (1 / (float)errors.height);
   }
 }
 __global__ void weight_update_kernel_for_conv(Tensor errors, Tensor last_activations, Tensor weights, float learning_rate)
@@ -915,7 +913,7 @@ public:
       get_threads(weights.height, weights.width),
       0, 
       stream
-    >>>(errors, (ll_iterator - 1)->get().activations, weights, learning_rate);
+    >>>(errors, (ll_iterator)->get().activations, weights, learning_rate);
   }
 
   void set_input_props(const Layer& ll)
@@ -991,7 +989,7 @@ public:
       get_threads(weights.height, weights.width),
       0, 
       stream
-    >>>(errors, (ll_iterator - 1)->get().activations, weights, learning_rate);
+    >>>(errors, (ll_iterator)->get().activations, weights, learning_rate);
   }
 
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -1067,7 +1065,6 @@ public:
     >>>(input, B_matrix, transformed_input);
 
     cudaDeviceSynchronize();
-    // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 
     filter_transform<<<
       1, 
@@ -1184,7 +1181,7 @@ public:
       get_threads(weights.height, weights.width),
       0, 
       stream
-    >>>(errors, (ll_iterator - 1)->get().activations, weights, learning_rate);
+    >>>(errors, (ll_iterator)->get().activations, weights, learning_rate);
   }
 
   void set_input_props(const Layer& ll)
@@ -1574,8 +1571,6 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
   
-  // std::cout << mnist_model.layers[3].get().weights << '\n';
-
   mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   cudaDeviceSynchronize();
   mnist_model.forward_pass(mini_batch_size, false);
@@ -1584,36 +1579,6 @@ int main()
   cudaDeviceSynchronize();
   mnist_model.weight_update(false);
   cudaDeviceSynchronize();
-
-
-  // for (std::vector<std::reference_wrapper<Layer>>::iterator l = mnist_model.layers.begin() + 1; l != mnist_model.layers.end(); ++l)
-  // {
-  //   std::cout << l->get().weights << '\n';
-  // }
-
-  std::cout << mnist_model.layers[2].get().activations << '\n';
-  std::cout << mnist_model.layers[3].get().errors << '\n';
-  std::cout << mnist_model.layers[3].get().weights << '\n';
-
-  // Tensor fake_nle {3, 3, 2, mini_batch_size};
-  // Tensor fake_nlw {3, 3, 2, mini_batch_size};
-
-  // mnist_model.layers[1].get().backward(
-  //   mnist_model.layers[2].get().weights,
-  //   mnist_model.layers[2].get().errors,
-  //   mnist_model.kernel_exec_s
-  // );
-
-  // mnist_model.layers[2].get().backward(
-  //   mnist_model.layers[3].get().weights,
-  //   mnist_model.layers[3].get().errors,
-  //   mnist_model.kernel_exec_s
-  // );
-
-  cudaDeviceSynchronize();
-
-  // std::cout << mnist_model.layers[1].get().errors << '\n';
-  // std::cout << mnist_model.layers[2].get().weights << '\n';
   
   // auto tik = std::chrono::high_resolution_clock::now();
   // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
