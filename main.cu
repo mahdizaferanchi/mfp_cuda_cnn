@@ -1172,6 +1172,33 @@ public:
 
   void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream)
   {
+
+    // transform erros
+    map_transform<<<
+      dim3(1, 1, nle.depth * nle.fourth),
+      dim3(nle.height / 2, nle.width / 2)
+    >>>(nle, B_matrix, transfromed_nle);
+    cudaDeviceSynchronize();
+
+    // transform ll activations
+    map_transform<<<
+      dim3(1, 1, nle.depth * nle.fourth),
+      dim3(nle.height / 2, nle.width / 2)
+    >>>(nle, B_matrix, transfromed_nle);
+    cudaDeviceSynchronize();
+
+    // mul in wts with R * S reslut
+    wts_input_mul_filter<<<
+      dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
+      dim3(transformed_input.height / 4, transformed_input.width / 4)
+    >>>(transformed_input, transformed_weights, conv_ans);
+
+    // reverse transform
+    inverse_transform<<<
+      dim3(1, 1, conv_ans.depth * conv_ans.fourth),
+      dim3(conv_ans.height / 4, conv_ans.width / 4)
+    >>>(conv_ans, A_matrix, errors);
+
     weight_update_kernel_for_conv<<<
       get_grids(weights.height, weights.width),
       get_threads(weights.height, weights.width),
@@ -1562,14 +1589,14 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
   
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  cudaDeviceSynchronize();
-  mnist_model.forward_pass(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  mnist_model.backprop(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  mnist_model.weight_update(false);
-  cudaDeviceSynchronize();
+  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // mnist_model.forward_pass(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // mnist_model.weight_update(false);
+  // cudaDeviceSynchronize();
   
   // auto tik = std::chrono::high_resolution_clock::now();
   // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
