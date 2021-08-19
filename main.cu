@@ -456,7 +456,51 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
   }	
 }
 
-__global__ void inverse_transform(Tensor in, Tensor t_mat, Tensor out) 
+__global__ void map_transform_for_backprop(Tensor in, Tensor t_mat, Tensor out) 
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+  int xIdx = i * 2;
+  int yIdx = j * 2;
+  // int zIdx = k * 2;
+  // MAGIC NUMBERS
+
+  float intermediate[4][2];
+
+  float result = 0.0f;
+
+  for (int hIdx = 0; hIdx < 2; ++hIdx)
+  {
+    for (int vIdx = 0; vIdx < 4; ++vIdx)
+    {
+      result = 0;
+      for (int loopIdx = 0; loopIdx < 2; ++loopIdx)
+      {
+        result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+      }
+      // *inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+      intermediate[vIdx][hIdx] = result;
+    }
+  }
+
+  for (int hIdx = 0; hIdx < 4; ++hIdx)
+  {
+    for (int vIdx = 0; vIdx < 4; ++vIdx)
+    {
+      result = 0;
+      for (int loopIdx = 0; loopIdx < 2; ++loopIdx)
+      {
+        // result += (*inter.at(2 * yIdx + vIdx, 2 * xIdx + loopIdx)) * (*t_mat.at(hIdx, loopIdx));
+        result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
+      }
+      *out.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+    }
+  } 
+}
+
+__global__ void inverse_transform_for_weights(Tensor in, Tensor t_mat, float learning_coefficient, Tensor out) 
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -467,13 +511,13 @@ __global__ void inverse_transform(Tensor in, Tensor t_mat, Tensor out)
   // int zIdx = k * 2;
   // MAGIC NUMBERS
 
-  float intermediate[2][4];
+  float intermediate[3][4];
 
   float result = 0.0f;
 
   for (int hIdx = 0; hIdx < 4; ++hIdx)
   {
-    for (int vIdx = 0; vIdx < 2; ++vIdx)
+    for (int vIdx = 0; vIdx < 3; ++vIdx)
     {
       result = 0;
       for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
@@ -485,9 +529,9 @@ __global__ void inverse_transform(Tensor in, Tensor t_mat, Tensor out)
     }
   }
 
-  for (int hIdx = 0; hIdx < 2; ++hIdx)
+  for (int hIdx = 0; hIdx < 3; ++hIdx)
   {
-    for (int vIdx = 0; vIdx < 2; ++vIdx)
+    for (int vIdx = 0; vIdx < 3; ++vIdx)
     {
       result = 0;
       for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
@@ -495,7 +539,8 @@ __global__ void inverse_transform(Tensor in, Tensor t_mat, Tensor out)
         // result += (*inter.at(2 * yIdx + vIdx, 2 * xIdx + loopIdx)) * (*t_mat.at(hIdx, loopIdx));
         result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
       }
-      *out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) = result;
+      // *out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) -= result * learning_coefficient;
+      *out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) = result * learning_coefficient;
     }
   }	
 }
@@ -540,6 +585,50 @@ __global__ void inverse_transform_with_bias(Tensor in, Tensor t_mat, CustomMatri
         result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
       }
       *out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) = result + *biases.at(0, k % in.depth);
+    }
+  }	
+}
+
+__global__ void inverse_transform(Tensor in, Tensor t_mat, Tensor out) 
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+  int xIdx = i * 4;
+  int yIdx = j * 4;
+  // int zIdx = k * 2;
+  // MAGIC NUMBERS
+
+  float intermediate[2][4];
+
+  float result = 0.0f;
+
+  for (int hIdx = 0; hIdx < 4; ++hIdx)
+  {
+    for (int vIdx = 0; vIdx < 2; ++vIdx)
+    {
+      result = 0;
+      for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
+      {
+        result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+      }
+      // *inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
+      intermediate[vIdx][hIdx] = result;
+    }
+  }
+
+  for (int hIdx = 0; hIdx < 2; ++hIdx)
+  {
+    for (int vIdx = 0; vIdx < 2; ++vIdx)
+    {
+      result = 0;
+      for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
+      {
+        // result += (*inter.at(2 * yIdx + vIdx, 2 * xIdx + loopIdx)) * (*t_mat.at(hIdx, loopIdx));
+        result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
+      }
+      *out.at((yIdx / 2 + vIdx), (xIdx / 2 + hIdx), (k % in.depth), (k / in.depth)) = result;
     }
   }	
 }
@@ -610,6 +699,30 @@ __global__ void wts_input_mul_filter(Tensor map, Tensor filter, Tensor out) // w
       *out.at(yIdx + vIdx, xIdx + hIdx, filterIdx, mapIdx) = result;
     }
   }	
+}
+
+__global__ void wts_ll_acts_mul_errs(Tensor map, Tensor filter, Tensor out)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+  int xIdx = i * 4;
+  int yIdx = j * 4;
+  int mapIdx = (k / filter.depth) / map.fourth;
+  int batchIdx = (k / filter.depth) % map.fourth;
+  int filterIdx = k % (map.fourth * map.depth);
+
+  for (int vIdx = 0; vIdx < 4; ++vIdx)
+  {
+    for (int hIdx = 0; hIdx < 4; ++hIdx)
+    {
+      atomicAdd(
+        out.at(vIdx, hIdx, mapIdx, filterIdx),
+        *map.at(yIdx + vIdx, xIdx + hIdx, mapIdx, batchIdx) * (*filter.at(yIdx + vIdx, xIdx + hIdx, filterIdx, batchIdx))
+      );
+    }
+  }
 }
 
 __global__ void wts_nle_mul_nlw(Tensor map, Tensor filter, Tensor out) // wts = winograd transform space
@@ -1173,38 +1286,40 @@ public:
   void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream)
   {
 
-    // transform erros
+    // transform ll activations
+    Tensor ll_trans_acts {
+      ll_iterator->get().activations.height * 2,
+      ll_iterator->get().activations.width * 2,
+      ll_iterator->get().activations.depth,
+      ll_iterator->get().activations.fourth
+    };
     map_transform<<<
-      dim3(1, 1, nle.depth * nle.fourth),
-      dim3(nle.height / 2, nle.width / 2)
-    >>>(nle, B_matrix, transfromed_nle);
+      dim3(1, 1, ll_iterator->get().activations.depth * ll_iterator->get().activations.fourth),
+      dim3(ll_iterator->get().activations.height / 2, ll_iterator->get().activations.width / 2)
+    >>>(ll_iterator->get().activations, B2_matrix, ll_trans_acts);
     cudaDeviceSynchronize();
 
-    // transform ll activations
-    map_transform<<<
-      dim3(1, 1, nle.depth * nle.fourth),
-      dim3(nle.height / 2, nle.width / 2)
-    >>>(nle, B_matrix, transfromed_nle);
+    // transform errors
+    Tensor transformed_errors {errors.height * 2, errors.width * 2, errors.depth, errors.fourth};
+    map_transform_for_backprop<<<
+      dim3(1, 1, errors.depth * errors.fourth),
+      dim3(errors.height / 2, errors.width / 2)
+    >>>(errors, G2_matrix, transformed_errors);
     cudaDeviceSynchronize();
 
     // mul in wts with R * S reslut
-    wts_input_mul_filter<<<
-      dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
-      dim3(transformed_input.height / 4, transformed_input.width / 4)
-    >>>(transformed_input, transformed_weights, conv_ans);
+    Tensor conv_ans {4, 4, weights.depth, weights.fourth};
+    wts_ll_acts_mul_errs<<<
+      dim3(1, 1, ll_trans_acts.fourth * transformed_errors.depth * ll_trans_acts.depth),
+      dim3(ll_trans_acts.height / 4, ll_trans_acts.width / 4)
+    >>>(ll_trans_acts, transformed_errors, conv_ans);
 
-    // reverse transform
-    inverse_transform<<<
+    // inverse transform
+    inverse_transform_for_weights<<<
       dim3(1, 1, conv_ans.depth * conv_ans.fourth),
       dim3(conv_ans.height / 4, conv_ans.width / 4)
-    >>>(conv_ans, A_matrix, errors);
+    >>>(conv_ans, A2_matrix, learning_rate / (float)ll_trans_acts.fourth, weights);
 
-    weight_update_kernel_for_conv<<<
-      get_grids(weights.height, weights.width),
-      get_threads(weights.height, weights.width),
-      0, 
-      stream
-    >>>(errors, (ll_iterator)->get().activations, weights, learning_rate);
   }
 
   void set_input_props(const Layer& ll)
@@ -1588,6 +1703,59 @@ int main()
   size_t mini_batch_size {2};
 
   mnist_model.finalize(mini_batch_size);
+
+  //*******************<new test>*********************
+  Tensor cbt_acts {6, 6};
+  float cbt_acts_vals[36] {1.0, 0.6, -0.5, 0.0, 1.0, 2.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, 0.3, 0.8, -0.8, 0.2, 0.2, 1.0, 1.0, 2.0, 2.0, -3.0, 0.0, -0.5, 5.0, 0.8, -0.8, 0.2, 0.2, 1.0, 1.0};
+  // float cbt_acts_vals[36] {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+  cbt_acts.write(cbt_acts_vals);
+  Tensor cbt_errs {6, 6};
+  // float cbt_errs_vals[36] {1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+  float cbt_errs_vals[36] {0.5, 0.1, -1.0, 1.0, 0.3, 2.0, 0.9, 0.2, -1.0, 1.0, 0.4, 0.5, 1.0, 0.0, -1.0, 2.0, 1.0, 0.01, 1.0, 0.0, -1.0, 98.0, 1.0, 1.0, 1.0, 0.0, -1.0, 1.0, 0.4, 0.5, 1.0, 0.0, -1.0, 1.0, 0.4, 0.5};
+  cbt_errs.write(cbt_errs_vals);
+  Tensor result {3, 3};
+  // transform ll activations
+  Tensor ll_trans_acts {
+    cbt_acts.height * 2,
+    cbt_acts.width * 2,
+    cbt_acts.depth,
+    cbt_acts.fourth
+  };
+  map_transform<<<
+    dim3(1, 1, cbt_acts.depth * cbt_acts.fourth),
+    dim3(cbt_acts.height / 2, cbt_acts.width / 2)
+  >>>(cbt_acts, layer1.B2_matrix, ll_trans_acts);
+  cudaDeviceSynchronize();
+
+  // transform errors
+  Tensor transformed_errors {cbt_errs.height * 2, cbt_errs.width * 2, cbt_errs.depth, cbt_errs.fourth};
+  map_transform_for_backprop<<<
+    dim3(1, 1, cbt_errs.depth * cbt_errs.fourth),
+    dim3(cbt_errs.height / 2, cbt_errs.width / 2)
+  >>>(cbt_errs, layer1.G2_matrix, transformed_errors);
+  cudaDeviceSynchronize();
+
+  // mul in wts with R * S reslut
+  Tensor conv_ans {4, 4, result.depth, result.fourth};
+  float zeros[16] {0};
+  conv_ans.write(zeros);
+  wts_ll_acts_mul_errs<<<
+    dim3(1, 1, ll_trans_acts.fourth * transformed_errors.depth * ll_trans_acts.depth),
+    dim3(ll_trans_acts.height / 4, ll_trans_acts.width / 4)
+  >>>(ll_trans_acts, transformed_errors, conv_ans);
+  cudaDeviceSynchronize();
+
+  // inverse transform
+  inverse_transform_for_weights<<<
+    dim3(1, 1, conv_ans.depth * conv_ans.fourth),
+    dim3(conv_ans.height / 4, conv_ans.width / 4)
+  >>>(conv_ans, layer1.A2_matrix, 1.0, result);
+
+  std::cout << conv_ans << '\n';
+  std::cout << ll_trans_acts << '\n';
+  std::cout << transformed_errors << '\n';
+  std::cout << result << '\n';
+  //*******************</new test>*********************
   
   // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   // cudaDeviceSynchronize();
