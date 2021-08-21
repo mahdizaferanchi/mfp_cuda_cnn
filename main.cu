@@ -130,22 +130,22 @@ public:
   size_t width;
   float* h_copy;
   float* d_copy{};
-  CustomMatrix(size_t p_height, size_t p_width, bool one_initialization=false, float initial_max=0.5):
+  CustomMatrix(size_t p_height, size_t p_width, bool const_initialization=false, float initial=0.5):
   height{p_height}, width{p_width}
   {
     size_t length = height * width;
     size_t float_size = sizeof(float);
     h_copy = new float[length];
     cudaMallocPitch((void**) &d_copy, &pitch, float_size * width, height);
-    if (!one_initialization)
+    if (!const_initialization)
     {
-      fill_with_rand(h_copy, length, initial_max);
+      fill_with_rand(h_copy, length, initial);
       for (int i = 0; i < width; ++i)
       {
         h_copy[(height - 1) * width + i] = 0;
       }
     }else{
-      std::fill_n(h_copy, length, 1.0f);
+      std::fill_n(h_copy, length, initial);
     }
     cudaMemcpy2D(d_copy, pitch, h_copy, 
       width * float_size, float_size * width, height, 
@@ -215,8 +215,8 @@ public:
   size_t fourth;
   float* zero {};
   Tensor(size_t p_height, size_t p_width, size_t p_depth=1, size_t p_fourth=1, 
-    bool one_initialization=false, float initial_max=0.5):
-  CustomMatrix{p_height * p_depth * p_fourth, p_width, one_initialization, initial_max},
+    bool const_initialization=false, float initial=0.5):
+  CustomMatrix{p_height * p_depth * p_fourth, p_width, const_initialization, initial},
   height {p_height}, width {p_width}, depth {p_depth}, fourth {p_fourth}
   {
     cudaMalloc((void **) &zero, sizeof(float));
@@ -1037,11 +1037,11 @@ public:
   }
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
   {
-    activations = Tensor(batch_size, units + 1, 1, 1, true);
-    pre_activations = Tensor(batch_size, units, 1, 1, true);
-    errors = Tensor(batch_size, units, 1, 1, true);
+    activations = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
+    pre_activations = Tensor(batch_size, units, 1, 1, true, 1.0f);
+    errors = Tensor(batch_size, units, 1, 1, true, 1.0f);
     if (double_activations)
-      activations_alt = Tensor(batch_size, units + 1, 1, 1, true);
+      activations_alt = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
   }
   size_t get_output_size() const
   {
@@ -1107,12 +1107,12 @@ public:
 
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
   {
-    activations = Tensor(batch_size, units + 1, 1, 1, true);
+    activations = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
     biases = Tensor(1, units);
-    pre_activations = Tensor(batch_size, units, 1, 1, true);
-    errors = Tensor(batch_size, units, 1, 1, true);
+    pre_activations = Tensor(batch_size, units, 1, 1, true, 1.0f);
+    errors = Tensor(batch_size, units, 1, 1, true, 1.0f);
     if (double_activations)
-      activations_alt = Tensor(batch_size, units + 1, 1, 1, true);
+      activations_alt = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
     set_input_props(ll);
   }
 };
@@ -1138,7 +1138,7 @@ public:
   Layer{act_p}, filter_quantity {p_filter_quantity}, same_padding {p_same_padding},
   filter_dims {p_filter_dims}, map_dims {0, 0}
   {
-    biases = CustomMatrix(1, filter_quantity);
+    biases = CustomMatrix(1, filter_quantity, true, 1.0f);
     float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
     B_matrix.write(map_transform_matrix_values);
     float map_transform_matrix_values2[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, -1, 0, 1};
@@ -1155,7 +1155,7 @@ public:
   Convolutional(size_t p_height, size_t p_width, Activation act_p=relu):
   Layer{act_p}, map_dims {p_height, p_width}, filter_quantity {1}
   {
-    biases = CustomMatrix(1, filter_quantity);
+    biases = CustomMatrix(1, filter_quantity, true, 1.0f);
     float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
     B_matrix.write(map_transform_matrix_values);
     float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
@@ -1308,7 +1308,7 @@ public:
     cudaDeviceSynchronize();
 
     // mul in wts with R * S reslut
-    Tensor conv_ans {4, 4, weights.depth, weights.fourth};
+    Tensor conv_ans {4, 4, weights.depth, weights.fourth, true, 0};
     wts_ll_acts_mul_errs<<<
       dim3(1, 1, ll_trans_acts.fourth * transformed_errors.depth * ll_trans_acts.depth),
       dim3(ll_trans_acts.height / 4, ll_trans_acts.width / 4)
@@ -1705,15 +1705,15 @@ int main()
   mnist_model.finalize(mini_batch_size);
 
   //*******************<new test>*********************
-  Tensor cbt_acts {6, 6};
-  float cbt_acts_vals[36] {1.0, 0.6, -0.5, 0.0, 1.0, 2.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, 0.3, 0.8, -0.8, 0.2, 0.2, 1.0, 1.0, 2.0, 2.0, -3.0, 0.0, -0.5, 5.0, 0.8, -0.8, 0.2, 0.2, 1.0, 1.0};
+  Tensor cbt_acts {6, 6, 2, 2};
+  float cbt_acts_vals[36 * 4] {0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,1.0, 0.6, -0.5, 0.0, 1.0, 2.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, 0.3, 0.8, -0.8, 0.2, 0.2, 1.0, 1.0, 2.0, 2.0, -3.0, 0.0, -0.5, 5.0, 0.8, -0.8, 0.2, 0.2, 1.0, 1.0};
   // float cbt_acts_vals[36] {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
   cbt_acts.write(cbt_acts_vals);
-  Tensor cbt_errs {6, 6};
+  Tensor cbt_errs {6, 6, 2, 2};
   // float cbt_errs_vals[36] {1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
-  float cbt_errs_vals[36] {0.5, 0.1, -1.0, 1.0, 0.3, 2.0, 0.9, 0.2, -1.0, 1.0, 0.4, 0.5, 1.0, 0.0, -1.0, 2.0, 1.0, 0.01, 1.0, 0.0, -1.0, 98.0, 1.0, 1.0, 1.0, 0.0, -1.0, 1.0, 0.4, 0.5, 1.0, 0.0, -1.0, 1.0, 0.4, 0.5};
+  float cbt_errs_vals[36 * 4] {0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0,0.5, 0.1, -1.0, 1.0, 0.3, 2.0, 0.9, 0.2, -1.0, 1.0, 0.4, 0.5, 1.0, 0.0, -1.0, 2.0, 1.0, 0.01, 1.0, 0.0, -1.0, 98.0, 1.0, 1.0, 1.0, 0.0, -1.0, 1.0, 0.4, 0.5, 1.0, 0.0, -1.0, 1.0, 0.4, 0.5};
   cbt_errs.write(cbt_errs_vals);
-  Tensor result {3, 3};
+  Tensor result {3, 3, 2, 2};
   // transform ll activations
   Tensor ll_trans_acts {
     cbt_acts.height * 2,
@@ -1736,9 +1736,7 @@ int main()
   cudaDeviceSynchronize();
 
   // mul in wts with R * S reslut
-  Tensor conv_ans {4, 4, result.depth, result.fourth};
-  float zeros[16] {0};
-  conv_ans.write(zeros);
+  Tensor conv_ans {4, 4, result.depth, result.fourth, true, 0};
   wts_ll_acts_mul_errs<<<
     dim3(1, 1, ll_trans_acts.fourth * transformed_errors.depth * ll_trans_acts.depth),
     dim3(ll_trans_acts.height / 4, ll_trans_acts.width / 4)
@@ -1752,6 +1750,7 @@ int main()
   >>>(conv_ans, layer1.A2_matrix, 1.0, result);
 
   std::cout << conv_ans << '\n';
+  std::cout << ll_trans_acts.fourth * transformed_errors.depth * ll_trans_acts.depth << '\n';
   std::cout << ll_trans_acts << '\n';
   std::cout << transformed_errors << '\n';
   std::cout << result << '\n';
