@@ -711,24 +711,26 @@ __global__ void wts_ll_acts_mul_errs(Tensor map, Tensor filter, Tensor out)
   int yIdx = j * 4;
   int mapIdx = (k / filter.depth) / map.fourth;
   int batchIdx = (k / filter.depth) % map.fourth;
-  int filterIdx = k % (map.fourth * map.depth);
+  int filterIdx = k % (map.fourth);
 
   for (int vIdx = 0; vIdx < 4; ++vIdx)
   {
     for (int hIdx = 0; hIdx < 4; ++hIdx)
     {
-      // atomicAdd(
-      //   out.at(vIdx, hIdx, mapIdx, filterIdx),
-      //   *map.at(yIdx + vIdx, xIdx + hIdx, mapIdx, batchIdx) * (*filter.at(yIdx + vIdx, xIdx + hIdx, filterIdx, batchIdx))
-      // );
+      atomicAdd(
+        out.at(vIdx, hIdx, mapIdx, filterIdx),
+        *map.at(yIdx + vIdx, xIdx + hIdx, mapIdx, batchIdx) * (*filter.at(yIdx + vIdx, xIdx + hIdx, filterIdx, batchIdx))
+      );
       // atomicAdd(
       //   out.at(vIdx, hIdx, 0, 0),
       //   *map.at(yIdx + vIdx, xIdx + hIdx, 0, 0) * (*filter.at(yIdx + vIdx, xIdx + hIdx, 0, 0))
       // );
-      atomicAdd(
-        out.at(vIdx, hIdx, 0, 0),
-        2 * (2)
-      );
+      // atomicAdd(
+      //   out.at(vIdx, hIdx, mapIdx, filterIdx),
+      //   4
+      // );
+      // if (filterIdx > *out.at(vIdx, hIdx, mapIdx, filterIdx))
+        // *out.at(vIdx, hIdx, mapIdx, filterIdx) = k;
     }
   }
 }
@@ -1763,7 +1765,6 @@ int main()
   >>>(conv_ans, layer1.A2_matrix, 1.0, result);
 
   std::cout << conv_ans << '\n';
-  std::cout << ll_trans_acts.fourth * transformed_errors.depth * ll_trans_acts.depth << '\n';
   std::cout << ll_trans_acts << '\n';
   std::cout << transformed_errors << '\n';
   std::cout << result << '\n';
