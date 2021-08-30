@@ -1132,6 +1132,13 @@ public:
   std::array<size_t, 2> map_dims;
   Tensor transformed_weights {1, 1};
   Tensor transformed_input {1, 1};
+  Tensor forward_inter {1, 1};
+  Tensor transformed_flipped_weights {1, 1};
+  Tensor transfromed_nle {1, 1};
+  Tensor backward_conv_inter {1, 1};
+  Tensor ll_transformed_acts {1, 1};
+  Tensor transformed_errors {1, 1};
+  Tensor weight_update_inter {1, 1};
   CustomMatrix biases {1, 1};
   Tensor G_matrix {4, 3};
   Tensor G2_matrix {4, 2}; // G matrix for f(3*3, 2*2) used in backprop
@@ -1198,8 +1205,6 @@ public:
     >>>(transformed_input, transformed_weights, conv_ans);
     // wts = winograd transform space
 
-    Tensor result {conv_ans.height / 2, conv_ans.width / 2, conv_ans.depth, conv_ans.fourth};
-
     inverse_transform_with_bias<<<
       dim3(1, 1, conv_ans.depth * conv_ans.fourth),
       dim3(conv_ans.height / 4, conv_ans.width / 4)
@@ -1237,7 +1242,6 @@ public:
 
     cudaDeviceSynchronize();
     
-    Tensor result {conv_ans.height / 2, conv_ans.width / 2, conv_ans.depth, conv_ans.fourth};
     inverse_transform<<<
       dim3(1, 1, conv_ans.depth * conv_ans.fourth),
       dim3(conv_ans.height / 4, conv_ans.width / 4)
@@ -1336,6 +1340,7 @@ public:
     size_t tile_dim = weights.height + 2 - 1;
     transformed_weights = Tensor(tile_dim, tile_dim, ll.get_depth(), filter_quantity);
     transformed_input = Tensor(2 * ll.activations.height, 2 * ll.activations.width, ll.activations.depth, ll.activations.fourth);
+    forward_inter = Tensor(2 * ll.activations.height, 2 * ll.activations.width, filter_quantity, ll.activations.fourth);
   }
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
   {
