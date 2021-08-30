@@ -245,9 +245,9 @@ public:
     }
     return os;
   }
-  __device__ inline float* at(int row, int col, int page=0, int block=0)
+  __device__ __forceinline__ float* at(int row, int col, int page=0, int block=0)
   {
-    if (row < 0 || row > height || col < 0 || col > width)
+    if (row < 0 || row >= height || col < 0 || col >= width)
     {
       return zero;
     }
@@ -436,7 +436,6 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
       {
         result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
       }
-      // *inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
       intermediate[vIdx][hIdx] = result;
     }
   }
@@ -448,7 +447,6 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
       result = 0;
       for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
       {
-        // result += (*inter.at(2 * yIdx + vIdx, 2 * xIdx + loopIdx)) * (*t_mat.at(hIdx, loopIdx));
         result += intermediate[vIdx][loopIdx] * (*t_mat.at(hIdx, loopIdx));
       }
       *out.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
