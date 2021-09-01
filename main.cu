@@ -970,6 +970,7 @@ public:
   virtual void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
   virtual void set_input_props(const Layer& lla) = 0;
   virtual void initialize_with_batch_size(size_t batch_size, const Layer& ll) = 0;
+  virtual void initialize_with_next_layer(const Layer& nl) = 0;
   virtual size_t get_output_size() const = 0;
   virtual size_t get_output_bias_size() const = 0;
   virtual size_t get_depth() const = 0;
@@ -1049,6 +1050,10 @@ public:
     errors = Tensor(batch_size, units, 1, 1, true, 1.0f);
     if (double_activations)
       activations_alt = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
+  }
+  void initialize_with_next_layer(const Layer& nl)
+  {
+    // std::cout << nl.weights.height << ' ' << nl.weights.width << '\n'; 
   }
   size_t get_output_size() const
   {
@@ -1198,17 +1203,16 @@ public:
       dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
     >>>(weights, G_matrix, transformed_weights);
 
-    Tensor conv_ans {transformed_input.height, transformed_input.width, filter_quantity, transformed_input.fourth};
     wts_input_mul_filter<<<
       dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
       dim3(transformed_input.height / 4, transformed_input.width / 4)
-    >>>(transformed_input, transformed_weights, conv_ans);
+    >>>(transformed_input, transformed_weights, forward_inter);
     // wts = winograd transform space
 
     inverse_transform_with_bias<<<
-      dim3(1, 1, conv_ans.depth * conv_ans.fourth),
-      dim3(conv_ans.height / 4, conv_ans.width / 4)
-    >>>(conv_ans, A_matrix, biases, pre_activations);
+      dim3(1, 1, forward_inter.depth * forward_inter.fourth),
+      dim3(forward_inter.height / 4, forward_inter.width / 4)
+    >>>(forward_inter, A_matrix, biases, pre_activations);
 
     conv_relu_kernel<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
@@ -1220,8 +1224,6 @@ public:
 
   void backward_conv(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
-    Tensor transformed_flipped_weights {nlw.height + 2 - 1, nlw.width + 2 - 1, nlw.depth, nlw.fourth};
-    Tensor transfromed_nle {nle.height * 2, nle.width * 2, nle.depth, nle.fourth};
     flipped_filter_transform<<<
       1, 
       dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth * transformed_flipped_weights.fourth)
@@ -1234,18 +1236,17 @@ public:
     >>>(nle, B_matrix, transfromed_nle);
     cudaDeviceSynchronize();
 
-    Tensor conv_ans {transfromed_nle.height, transfromed_nle.width, errors.depth, transfromed_nle.fourth};
     wts_nle_mul_nlw<<<
       dim3(1, 1, transfromed_nle.fourth * transformed_flipped_weights.depth),
       dim3(transfromed_nle.height / 4, transfromed_nle.width / 4)
-    >>>(transfromed_nle, transformed_flipped_weights, conv_ans);
+    >>>(transfromed_nle, transformed_flipped_weights, backward_conv_inter);
 
     cudaDeviceSynchronize();
     
     inverse_transform<<<
-      dim3(1, 1, conv_ans.depth * conv_ans.fourth),
-      dim3(conv_ans.height / 4, conv_ans.width / 4)
-    >>>(conv_ans, A_matrix, errors);
+      dim3(1, 1, backward_conv_inter.depth * backward_conv_inter.fourth),
+      dim3(backward_conv_inter.height / 4, backward_conv_inter.width / 4)
+    >>>(backward_conv_inter, A_matrix, errors);
 
     cudaDeviceSynchronize();
 
@@ -1298,20 +1299,13 @@ public:
   {
 
     // transform ll activations
-    Tensor ll_trans_acts {
-      ll_iterator->get().activations.height * 2,
-      ll_iterator->get().activations.width * 2,
-      ll_iterator->get().activations.depth,
-      ll_iterator->get().activations.fourth
-    };
     map_transform<<<
       dim3(1, 1, ll_iterator->get().activations.depth * ll_iterator->get().activations.fourth),
       dim3(ll_iterator->get().activations.height / 2, ll_iterator->get().activations.width / 2)
-    >>>(ll_iterator->get().activations, B2_matrix, ll_trans_acts);
+    >>>(ll_iterator->get().activations, B2_matrix, ll_transformed_acts);
     cudaDeviceSynchronize();
 
     // transform errors
-    Tensor transformed_errors {errors.height * 2, errors.width * 2, errors.depth, errors.fourth};
     map_transform_for_backprop<<<
       dim3(1, 1, errors.depth * errors.fourth),
       dim3(errors.height / 2, errors.width / 2)
@@ -1319,17 +1313,16 @@ public:
     cudaDeviceSynchronize();
 
     // mul in wts with R * S reslut
-    Tensor conv_ans {4, 4, weights.depth, weights.fourth, true, 0};
     wts_ll_acts_mul_errs<<<
-      dim3(1, 1, ll_trans_acts.fourth * transformed_errors.depth * ll_trans_acts.depth),
-      dim3(ll_trans_acts.height / 4, ll_trans_acts.width / 4)
-    >>>(ll_trans_acts, transformed_errors, conv_ans);
+      dim3(1, 1, ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth),
+      dim3(ll_transformed_acts.height / 4, ll_transformed_acts.width / 4)
+    >>>(ll_transformed_acts, transformed_errors, weight_update_inter);
 
     // inverse transform
     inverse_transform_for_weights<<<
-      dim3(1, 1, conv_ans.depth * conv_ans.fourth),
-      dim3(conv_ans.height / 4, conv_ans.width / 4)
-    >>>(conv_ans, A2_matrix, learning_rate / (float)ll_trans_acts.fourth, weights);
+      dim3(1, 1, weight_update_inter.depth * weight_update_inter.fourth),
+      dim3(weight_update_inter.height / 4, weight_update_inter.width / 4)
+    >>>(weight_update_inter, A2_matrix, learning_rate / (float)ll_transformed_acts.fourth, weights);
 
   }
 
@@ -1337,10 +1330,17 @@ public:
   {
     // std::cout << "conv set input props called \n";
     weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
+    weight_update_inter = Tensor(4, 4, weights.depth, weights.fourth, true, 0);
     size_t tile_dim = weights.height + 2 - 1;
     transformed_weights = Tensor(tile_dim, tile_dim, ll.get_depth(), filter_quantity);
     transformed_input = Tensor(2 * ll.activations.height, 2 * ll.activations.width, ll.activations.depth, ll.activations.fourth);
     forward_inter = Tensor(2 * ll.activations.height, 2 * ll.activations.width, filter_quantity, ll.activations.fourth);
+    ll_transformed_acts = Tensor (
+      ll.activations.height * 2,
+      ll.activations.width * 2,
+      ll.activations.depth,
+      ll.activations.fourth
+    );
   }
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
   {
@@ -1362,7 +1362,16 @@ public:
         final_height, final_width, filter_quantity, batch_size);
       errors = Tensor(
         final_height, final_width, filter_quantity, batch_size);
+      transformed_errors = Tensor(
+        errors.height * 2, errors.width * 2, errors.depth, errors.fourth
+      );
     }
+  }
+  void initialize_with_next_layer(const Layer& nl)
+  {
+    transformed_flipped_weights = Tensor(nl.weights.height + 2 - 1, nl.weights.width + 2 - 1, nl.weights.depth, nl.weights.fourth);
+    transfromed_nle = Tensor(nl.errors.height * 2, nl.errors.width * 2, nl.errors.depth, nl.errors.fourth);
+    backward_conv_inter = Tensor(transfromed_nle.height, transfromed_nle.width, errors.depth, transfromed_nle.fourth);
   }
   size_t get_output_size() const
   {
@@ -1453,6 +1462,10 @@ public:
       for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin(); l != layers.end(); ++l)
       {
         l->get().initialize_with_batch_size(batch_size, l == layers.begin() ? l->get() : (l - 1)->get());
+      }
+      for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin(); l != layers.end(); ++l)
+      {
+        l->get().initialize_with_next_layer(l == layers.end() - 1 ? l->get() : (l + 1)->get());
       }
       cudaMalloc((void**) &d_correct_labels, sizeof(int) * batch_size);
       cudaMalloc((void**) &d_correct_labels_alt, sizeof(int) * batch_size);
@@ -1700,7 +1713,7 @@ int main()
 
   // auto layer3 = Regular(128);
   // auto layer3 = FCfromConv(128);
-  auto layer3 = Convolutional(2, {3, 3});
+  auto layer3 = Convolutional(2, {4, 4});
 
   auto layer4 = FCfromConv(10, softmax);
   // auto layer4 = Regular(10, softmax);
@@ -1716,14 +1729,14 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // mnist_model.forward_pass(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // mnist_model.backprop(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // mnist_model.weight_update(false);
-  // cudaDeviceSynchronize();
+  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  cudaDeviceSynchronize();
+  mnist_model.forward_pass(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  mnist_model.backprop(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
   
   // auto tik = std::chrono::high_resolution_clock::now();
   // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
