@@ -1699,24 +1699,24 @@ int main()
   std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
   std::rand(); 
 
-  PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv");
+  PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", true);
   PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-  PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv");
+  PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", true);
   PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
-  // auto layer1 = Regular(784, relu, true);
-  auto layer1 = Convolutional(28, 28);
+  auto layer1 = Regular(784, relu, true);
+  // auto layer1 = Convolutional(28, 28);
   
-  // auto layer2 = Regular(128);
+  auto layer2 = Regular(64);
   // auto layer2 = FCfromConv(128);
-  auto layer2 = Convolutional(3, {3, 3});
+  // auto layer2 = Convolutional(3, {3, 3});
 
-  // auto layer3 = Regular(128);
+  auto layer3 = Regular(64);
   // auto layer3 = FCfromConv(128);
-  auto layer3 = Convolutional(2, {4, 4});
+  // auto layer3 = Convolutional(2, {4, 4});
 
-  auto layer4 = FCfromConv(10, softmax);
-  // auto layer4 = Regular(10, softmax);
+  // auto layer4 = FCfromConv(10, softmax);
+  auto layer4 = Regular(10, softmax);
 
   Model mnist_model(cross_entropy, 0.05f);
   // Model mnist_model(cross_entropy, 2.0f);
@@ -1725,21 +1725,21 @@ int main()
   mnist_model.add(layer3);
   mnist_model.add(layer4);
 
-  size_t mini_batch_size {2};
+  size_t mini_batch_size {32};
 
   mnist_model.finalize(mini_batch_size);
 
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  cudaDeviceSynchronize();
-  mnist_model.forward_pass(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  mnist_model.backprop(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  mnist_model.weight_update(false);
-  cudaDeviceSynchronize();
+  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // mnist_model.forward_pass(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // mnist_model.weight_update(false);
+  // cudaDeviceSynchronize();
   
   // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
+  mnist_model.train(train_images, train_labels, 7, mini_batch_size);
 
   // mnist_model.learning_rate = 0.001f;
   // mnist_model.train(train_images, train_labels, 5, mini_batch_size);
@@ -1751,7 +1751,7 @@ int main()
   // std::chrono::duration<double, std::milli> ms_double = tok - tik;
   // std::cout << ms_double.count() << "ms \n";
 
-  // mnist_model.test(test_images, test_labels, mini_batch_size);
+  mnist_model.test(test_images, test_labels, mini_batch_size);
 
   return 0;
 }
