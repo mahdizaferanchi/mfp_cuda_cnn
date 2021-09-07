@@ -1699,20 +1699,20 @@ int main()
   std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
   std::rand(); 
 
-  PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", true);
+  PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", false);
   PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-  PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", true);
+  PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", false);
   PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 
-  auto layer1 = Regular(784, relu, true);
-  // auto layer1 = Convolutional(28, 28);
+  // auto layer1 = Regular(784, relu, true);
+  auto layer1 = Convolutional(28, 28);
   
-  auto layer2 = Regular(128);
+  // auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
-  // auto layer2 = Convolutional(3, {3, 3});
+  auto layer2 = Convolutional(5, {3, 3});
 
-  auto layer3 = Regular(128);
-  // auto layer3 = FCfromConv(128);
+  // auto layer3 = Regular(128);
+  auto layer3 = FCfromConv(128);
   // auto layer3 = Convolutional(2, {4, 4});
 
   // auto layer4 = FCfromConv(10, softmax);
