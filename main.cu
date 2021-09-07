@@ -1707,11 +1707,11 @@ int main()
   auto layer1 = Regular(784, relu, true);
   // auto layer1 = Convolutional(28, 28);
   
-  auto layer2 = Regular(64);
+  auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
   // auto layer2 = Convolutional(3, {3, 3});
 
-  auto layer3 = Regular(64);
+  auto layer3 = Regular(128);
   // auto layer3 = FCfromConv(128);
   // auto layer3 = Convolutional(2, {4, 4});
 
