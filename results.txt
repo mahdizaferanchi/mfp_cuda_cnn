@@ -1,0 +1,112 @@
+config: layer1:R784, layer2:R64, layer3:R64, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB
+Epoch 1 : acc = 0.6801 in 221.421ms.
+Epoch 2 : acc = 0.78005 in 209.938ms.
+Epoch 3 : acc = 0.80565 in 207.533ms.
+Epoch 4 : acc = 0.8202 in 207.588ms.
+Epoch 5 : acc = 0.83185 in 207.819ms.
+Epoch 6 : acc = 0.83985 in 210.215ms.
+Epoch 7 : acc = 0.84665 in 220.756ms.
+1486.22ms 
+test acc = 0.8411
+config: layer1:R784, layer2:R128, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB
+Epoch 1 : acc = 0.75675 in 268.411ms.
+Epoch 2 : acc = 0.86405 in 255.28ms.
+Epoch 3 : acc = 0.89085 in 253.241ms.
+Epoch 4 : acc = 0.90525 in 253.524ms.
+Epoch 5 : acc = 0.9148 in 253.478ms.
+Epoch 6 : acc = 0.92295 in 254.029ms.
+Epoch 7 : acc = 0.92835 in 255.144ms.
+1794.26ms 
+test acc = 0.9012
+config: layer1:R784, layer2:R32, layer3:R32, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB
+Epoch 1 : acc = 0.56855 in 204.713ms.
+Epoch 2 : acc = 0.6739 in 193.595ms.
+Epoch 3 : acc = 0.69725 in 194.56ms.
+Epoch 4 : acc = 0.7101 in 195.185ms.
+Epoch 5 : acc = 0.7207 in 193.937ms.
+Epoch 6 : acc = 0.72815 in 194.117ms.
+Epoch 7 : acc = 0.73305 in 194.082ms.
+1371.17ms 
+test acc = 0.7419
+config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB
+Epoch 1 : acc = 0.09815 in 2129.53ms.
+Epoch 2 : acc = 0.09795 in 2115.68ms.
+Epoch 3 : acc = 0.09795 in 2120.29ms.
+Epoch 4 : acc = 0.09795 in 2114.77ms.
+Epoch 5 : acc = 0.09795 in 2116.06ms.
+Epoch 6 : acc = 0.09795 in 2116.82ms.
+Epoch 7 : acc = 0.09795 in 2122.14ms.
+14928.3ms 
+test acc = 0.0983
+config: layer1:R784, layer2:R32, layer3:R32, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB
+Epoch 1/7
+625/625 - 1s - loss: 0.7912 - accuracy: 0.7197
+Epoch 2/7
+625/625 - 1s - loss: 0.5292 - accuracy: 0.8095
+Epoch 3/7
+625/625 - 1s - loss: 0.4673 - accuracy: 0.8317
+Epoch 4/7
+625/625 - 1s - loss: 0.4334 - accuracy: 0.8413
+Epoch 5/7
+625/625 - 1s - loss: 0.4094 - accuracy: 0.8504
+Epoch 6/7
+625/625 - 1s - loss: 0.3892 - accuracy: 0.8583
+Epoch 7/7
+625/625 - 1s - loss: 0.3755 - accuracy: 0.8618
+5.033897399902344
+313/313 - 1s - loss: 0.4419 - accuracy: 0.8455
+[0.44193577766418457, 0.8454999923706055]
+config: layer1:R784, layer2:R64, layer3:R64, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB
+Epoch 1/7
+625/625 - 1s - loss: 0.7545 - accuracy: 0.7286
+Epoch 2/7
+625/625 - 1s - loss: 0.5116 - accuracy: 0.8133
+Epoch 3/7
+625/625 - 1s - loss: 0.4524 - accuracy: 0.8366
+Epoch 4/7
+625/625 - 1s - loss: 0.4232 - accuracy: 0.8460
+Epoch 5/7
+625/625 - 1s - loss: 0.3978 - accuracy: 0.8553
+Epoch 6/7
+625/625 - 1s - loss: 0.3799 - accuracy: 0.8607
+Epoch 7/7
+625/625 - 1s - loss: 0.3658 - accuracy: 0.8640
+5.2389912605285645
+313/313 - 0s - loss: 0.4341 - accuracy: 0.8484
+[0.43405845761299133, 0.8483999967575073]
+config: layer1:R784, layer2:R128, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB
+Epoch 1/7
+625/625 - 1s - loss: 0.7374 - accuracy: 0.7390
+Epoch 2/7
+625/625 - 1s - loss: 0.4973 - accuracy: 0.8204
+Epoch 3/7
+625/625 - 1s - loss: 0.4409 - accuracy: 0.8403
+Epoch 4/7
+625/625 - 1s - loss: 0.4089 - accuracy: 0.8504
+Epoch 5/7
+625/625 - 1s - loss: 0.3828 - accuracy: 0.8582
+Epoch 6/7
+625/625 - 1s - loss: 0.3623 - accuracy: 0.8655
+Epoch 7/7
+625/625 - 1s - loss: 0.3471 - accuracy: 0.8729
+5.218139410018921
+313/313 - 0s - loss: 0.4256 - accuracy: 0.8456
+[0.42555001378059387, 0.8456000089645386]
+config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB
+Epoch 1/7
+625/625 - 1s - loss: 0.7411 - accuracy: 0.7239
+Epoch 2/7
+625/625 - 1s - loss: 0.4911 - accuracy: 0.8160
+Epoch 3/7
+625/625 - 1s - loss: 0.4299 - accuracy: 0.8390
+Epoch 4/7
+625/625 - 1s - loss: 0.3881 - accuracy: 0.8566
+Epoch 5/7
+625/625 - 1s - loss: 0.3556 - accuracy: 0.8691
+Epoch 6/7
+625/625 - 1s - loss: 0.3282 - accuracy: 0.8759
+Epoch 7/7
+625/625 - 1s - loss: 0.3038 - accuracy: 0.8855
+6.254150867462158
+313/313 - 0s - loss: 0.3674 - accuracy: 0.8685
+[0.36742615699768066, 0.8684999942779541]

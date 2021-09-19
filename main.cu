@@ -1708,17 +1708,17 @@ int main()
   PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
   PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
 
-  std::cout << "config: layer1:R784, layer2:R64, layer3:R64, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
+  std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
-  auto layer1 = Regular(784, relu, true);
-  // auto layer1 = Convolutional(28, 28);
+  // auto layer1 = Regular(784, relu, true);
+  auto layer1 = Convolutional(28, 28);
   
-  auto layer2 = Regular(64);
+  // auto layer2 = Regular(32);
   // auto layer2 = FCfromConv(128);
-  // auto layer2 = Convolutional(5, {3, 3});
+  auto layer2 = Convolutional(5, {3, 3});
 
-  auto layer3 = Regular(64);
-  // auto layer3 = FCfromConv(128);
+  // auto layer3 = Regular(32);
+  auto layer3 = FCfromConv(128);
   // auto layer3 = Convolutional(2, {4, 4});
 
   // auto layer4 = FCfromConv(10, softmax);
