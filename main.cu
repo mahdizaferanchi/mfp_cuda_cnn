@@ -1708,17 +1708,17 @@ int main()
   PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
   PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
 
-  std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
+  // std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
   // auto layer1 = Regular(784, relu, true);
-  auto layer1 = Convolutional(28, 28);
+  auto layer1 = Convolutional(5, 5);
   
   // auto layer2 = Regular(32);
   // auto layer2 = FCfromConv(128);
-  auto layer2 = Convolutional(5, {3, 3});
+  auto layer2 = Convolutional(2, {3, 3});
 
   // auto layer3 = Regular(32);
-  auto layer3 = FCfromConv(128);
+  auto layer3 = FCfromConv(10);
   // auto layer3 = Convolutional(2, {4, 4});
 
   // auto layer4 = FCfromConv(10, softmax);
@@ -1731,21 +1731,30 @@ int main()
   mnist_model.add(layer3);
   mnist_model.add(layer4);
 
-  size_t mini_batch_size {32};
+  size_t mini_batch_size {1};
 
   mnist_model.finalize(mini_batch_size);
 
   // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   // cudaDeviceSynchronize();
-  // mnist_model.forward_pass(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // mnist_model.backprop(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // mnist_model.weight_update(false);
-  // cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.forward_pass(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.backprop(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  std::cout << mnist_model.layers[0].get().activations << '\n';
+  std::cout << mnist_model.layers[3].get().activations << '\n';
+  std::cout << mnist_model.layers[1].get().weights << '\n';
+  std::cout << mnist_model.layers[2].get().weights << '\n';
+  std::cout << mnist_model.layers[3].get().weights << '\n';
   
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 7, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
 
   // mnist_model.learning_rate = 0.001f;
   // mnist_model.train(train_images, train_labels, 5, mini_batch_size);
@@ -1753,11 +1762,11 @@ int main()
   // mnist_model.learning_rate = 0.0001f;
   // mnist_model.train(train_images, train_labels, 5, mini_batch_size);
 
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
 
-  mnist_model.test(test_images, test_labels, mini_batch_size);
+  // mnist_model.test(test_images, test_labels, mini_batch_size);
 
   return 0;
 }
