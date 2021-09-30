@@ -967,7 +967,7 @@ public:
   {}
   virtual void forward(Tensor& input, cudaStream_t s) = 0;
   virtual void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) = 0;
-  virtual void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream) = 0;
+  virtual void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false) = 0;
   virtual void set_input_props(const Layer& lla) = 0;
   virtual void initialize_with_batch_size(size_t batch_size, const Layer& ll) = 0;
   virtual void initialize_with_next_layer(const Layer& nl) = 0;
@@ -1027,7 +1027,7 @@ public:
     >>>(errors, pre_activations, errors);
   }
 
-  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream)
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
   {
     weight_update_kernel<<<
       get_grids(weights.height, weights.width),
@@ -1107,7 +1107,7 @@ public:
     // cudaDeviceSynchronize();
   }
 
-  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream)
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
   {
     weight_update_kernel_from_conv<<<
       get_grids(weights.height, weights.width),
@@ -1295,14 +1295,15 @@ public:
     }
   }
 
-  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream)
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
   {
 
     // transform ll activations
+    Tensor& ll_acts = use_alt ? ll_iterator->get().activations_alt : ll_iterator->get().activations;
     map_transform<<<
-      dim3(1, 1, ll_iterator->get().activations.depth * ll_iterator->get().activations.fourth),
-      dim3(ll_iterator->get().activations.height / 2, ll_iterator->get().activations.width / 2)
-    >>>(ll_iterator->get().activations, B2_matrix, ll_transformed_acts);
+      dim3(1, 1, ll_acts.depth * ll_acts.fourth),
+      dim3(ll_acts.height / 2, ll_acts.width / 2)
+    >>>(ll_acts, B2_matrix, ll_transformed_acts);
     cudaDeviceSynchronize();
 
     // transform errors
@@ -1541,6 +1542,8 @@ public:
     //   0, 
     //   kernel_exec_s
     // >>>(layers[1].get().errors, input_activations, layers[1].get().weights, learning_rate);
+    std::vector<std::reference_wrapper<Layer>>::iterator first_layer = layers.begin();
+    layers[1].get().update_weights(first_layer, learning_rate, kernel_exec_s, use_alt);
 
     for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
     {
@@ -1703,19 +1706,20 @@ int main()
   // PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
   // PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", false);
   // PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
-  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", true);
+  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
   PinnedData<int, 10000, 1> test_labels("../input/mnistdata/mnist_test.csv");
-  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
+  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", false);
   PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
 
   // std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
   // auto layer1 = Regular(784, relu, true);
-  auto layer1 = Convolutional(5, 5);
+  auto layer1 = Convolutional(28, 28);
+  // auto layer1 = Convolutional(5, 5);
   
   // auto layer2 = Regular(32);
   // auto layer2 = FCfromConv(128);
-  auto layer2 = Convolutional(2, {3, 3});
+  auto layer2 = Convolutional(5, {3, 3});
 
   // auto layer3 = Regular(32);
   auto layer3 = FCfromConv(10);
@@ -1731,15 +1735,16 @@ int main()
   mnist_model.add(layer3);
   mnist_model.add(layer4);
 
-  size_t mini_batch_size {32};
+  size_t mini_batch_size {2};
 
   mnist_model.finalize(mini_batch_size);
+  std::cout << mnist_model.layers[1].get().pre_activations << '\n';
 
-  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   // cudaDeviceSynchronize();
-  // std::cout << mnist_model.layers[1].get().weights << '\n';
   // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.forward_pass(mini_batch_size, false);
+  // std::cout << mnist_model.layers[1].get().weights << '\n';
+  mnist_model.forward_pass(mini_batch_size, false);
   // cudaDeviceSynchronize();
   // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   // mnist_model.backprop(mini_batch_size, false);
@@ -1749,26 +1754,22 @@ int main()
   // cudaDeviceSynchronize();
   // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   // std::cout << mnist_model.layers[0].get().activations << '\n';
-  // std::cout << mnist_model.layers[1].get().activations << '\n';
+  std::cout << mnist_model.layers[1].get().activations << '\n';
+  std::cout << mnist_model.layers[1].get().pre_activations << '\n';
+  // std::cout << mnist_model.layers[2].get().activations << '\n';
   // std::cout << mnist_model.layers[3].get().activations << '\n';
   // std::cout << mnist_model.layers[1].get().weights << '\n';
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << mnist_model.layers[3].get().weights << '\n';
   
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 7, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
-  // mnist_model.learning_rate = 0.001f;
-  // mnist_model.train(train_images, train_labels, 5, mini_batch_size);
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
 
-  // mnist_model.learning_rate = 0.0001f;
-  // mnist_model.train(train_images, train_labels, 5, mini_batch_size);
-
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
-
-  mnist_model.test(test_images, test_labels, mini_batch_size);
+  // mnist_model.test(test_images, test_labels, mini_batch_size);
 
   return 0;
 }

@@ -14,6 +14,11 @@ flipped_filter_transform<<<
 std::cout << sample_filter << '\n';
 std::cout << trans_filter << '\n';
 
+// mnist_model.learning_rate = 0.001f;
+// mnist_model.train(train_images, train_labels, 5, mini_batch_size);
+
+// mnist_model.learning_rate = 0.0001f;
+// mnist_model.train(train_images, train_labels, 5, mini_batch_size);
 
 // mnist_model.reset_correct_predictions();
 // mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
