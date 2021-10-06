@@ -332,7 +332,7 @@ __global__ void convmulfc(Tensor acts, Tensor weights, Tensor out)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
-  if (1)
+  if (i < acts.fourth && j < weights.width)
   {
     float result = 0.0f;
     for (int loopIdx = 0; loopIdx < acts.width * acts.height * acts.depth; ++loopIdx)
@@ -1266,19 +1266,23 @@ public:
   {
     matmulmatTtoconv<<<
       get_grids(nle.height, get_output_size()), 
-      get_threads(nle.height, get_output_size()) 
+      get_threads(nle.height, get_output_size()),
+      0,
+      s
     >>>(nle, nlw, errors);
-
-    cudaDeviceSynchronize();
 
     conv_relu_derivative<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
-      dim3(pre_activations.height / 2, pre_activations.width / 2)
+      dim3(pre_activations.height / 2, pre_activations.width / 2),
+      0,
+      s
     >>>(pre_activations, pre_activations);
 
     elementwisemul<<<
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
-      get_threads(errors.height, errors.width)
+      get_threads(errors.height, errors.width),
+      0,
+      s
     >>>(errors, pre_activations, errors);
   }
 
@@ -1293,34 +1297,42 @@ public:
     }
   }
 
-  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t s, bool use_alt=false)
   {
 
     // transform ll activations
     Tensor& ll_acts = use_alt ? ll_iterator->get().activations_alt : ll_iterator->get().activations;
     map_transform<<<
       dim3(1, 1, ll_acts.depth * ll_acts.fourth),
-      dim3(ll_acts.height / 2, ll_acts.width / 2)
+      dim3(ll_acts.height / 2, ll_acts.width / 2),
+      0,
+      s
     >>>(ll_acts, B2_matrix, ll_transformed_acts);
     cudaDeviceSynchronize();
 
     // transform errors
     map_transform_for_backprop<<<
       dim3(1, 1, errors.depth * errors.fourth),
-      dim3(errors.height / 2, errors.width / 2)
+      dim3(errors.height / 2, errors.width / 2),
+      0,
+      s
     >>>(errors, G2_matrix, transformed_errors);
     cudaDeviceSynchronize();
 
     // mul in wts with R * S reslut
     wts_ll_acts_mul_errs<<<
       dim3(1, 1, ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth),
-      dim3(ll_transformed_acts.height / 4, ll_transformed_acts.width / 4)
+      dim3(ll_transformed_acts.height / 4, ll_transformed_acts.width / 4),
+      0,
+      s
     >>>(ll_transformed_acts, transformed_errors, weight_update_inter);
 
     // inverse transform
     inverse_transform_for_weights<<<
       dim3(1, 1, weight_update_inter.depth * weight_update_inter.fourth),
-      dim3(weight_update_inter.height / 4, weight_update_inter.width / 4)
+      dim3(weight_update_inter.height / 4, weight_update_inter.width / 4),
+      0,
+      s
     >>>(weight_update_inter, A2_matrix, learning_rate / (float)ll_transformed_acts.fourth, weights);
 
   }
@@ -1733,7 +1745,7 @@ int main()
   mnist_model.add(layer3);
   mnist_model.add(layer4);
 
-  size_t mini_batch_size {32};
+  size_t mini_batch_size {4};
 
   mnist_model.finalize(mini_batch_size);
 
@@ -1757,13 +1769,13 @@ int main()
   // std::cout << mnist_model.layers[3].get().weights << '\n';
   
   auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  mnist_model.train(train_images, train_labels, 7, mini_batch_size);
 
   auto tok = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> ms_double = tok - tik;
   std::cout << ms_double.count() << "ms \n";
 
-  // mnist_model.test(test_images, test_labels, mini_batch_size);
+  mnist_model.test(test_images, test_labels, mini_batch_size);
 
   return 0;
 }

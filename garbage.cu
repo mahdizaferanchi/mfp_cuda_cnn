@@ -461,3 +461,4 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 // std::cout << activations << '\n';
   Convolutional& conv_layer = dynamic_cast<Convolutional&>(mnist_model.layers[1].get());
   std::cout << conv_layer.biases << '\n';
+*** 5 is the cut off point *** (layer3 units : 128)
