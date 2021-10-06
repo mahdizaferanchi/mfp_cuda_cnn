@@ -459,3 +459,5 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
 
 // std::cout << "final result: \n";
 // std::cout << activations << '\n';
+  Convolutional& conv_layer = dynamic_cast<Convolutional&>(mnist_model.layers[1].get());
+  std::cout << conv_layer.biases << '\n';

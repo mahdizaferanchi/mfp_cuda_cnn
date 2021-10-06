@@ -1092,19 +1092,18 @@ public:
       0, 
    		s
     >>>(input, weights, pre_activations);
-    simple_bias<<<
-      get_grids(activations.height, activations.width),
-      get_threads(activations.height, activations.width),
-      0,
-   		s
-    >>>(pre_activations, biases, pre_activations);
+    // simple_bias<<<
+    //   get_grids(activations.height, activations.width),
+    //   get_threads(activations.height, activations.width),
+    //   0,
+   	// 	s
+    // >>>(pre_activations, biases, pre_activations);
     act.f<<<
       get_grids(input.fourth, units),
       get_threads(input.fourth, units), 
       0, 
    		s
     >>>(pre_activations, activations);
-    // cudaDeviceSynchronize();
   }
 
   void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
@@ -1157,7 +1156,7 @@ public:
   Layer{act_p}, filter_quantity {p_filter_quantity}, same_padding {p_same_padding},
   filter_dims {p_filter_dims}, map_dims {0, 0}
   {
-    biases = CustomMatrix(1, filter_quantity, true, 1.0f);
+    biases = CustomMatrix(1, filter_quantity, true, 0.0f);
     float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
     B_matrix.write(map_transform_matrix_values);
     float map_transform_matrix_values2[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, -1, 0, 1};
@@ -1265,7 +1264,6 @@ public:
 
   void backward_fc(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
-
     matmulmatTtoconv<<<
       get_grids(nle.height, get_output_size()), 
       get_threads(nle.height, get_output_size()) 
@@ -1722,7 +1720,7 @@ int main()
   auto layer2 = Convolutional(5, {3, 3});
 
   // auto layer3 = Regular(32);
-  auto layer3 = FCfromConv(10);
+  auto layer3 = FCfromConv(128);
   // auto layer3 = Convolutional(2, {4, 4});
 
   // auto layer4 = FCfromConv(10, softmax);
@@ -1735,16 +1733,14 @@ int main()
   mnist_model.add(layer3);
   mnist_model.add(layer4);
 
-  size_t mini_batch_size {2};
+  size_t mini_batch_size {32};
 
   mnist_model.finalize(mini_batch_size);
-  std::cout << mnist_model.layers[1].get().pre_activations << '\n';
 
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   // cudaDeviceSynchronize();
   // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // std::cout << mnist_model.layers[1].get().weights << '\n';
-  mnist_model.forward_pass(mini_batch_size, false);
+  // mnist_model.forward_pass(mini_batch_size, false);
   // cudaDeviceSynchronize();
   // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   // mnist_model.backprop(mini_batch_size, false);
@@ -1754,20 +1750,18 @@ int main()
   // cudaDeviceSynchronize();
   // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   // std::cout << mnist_model.layers[0].get().activations << '\n';
-  std::cout << mnist_model.layers[1].get().activations << '\n';
-  std::cout << mnist_model.layers[1].get().pre_activations << '\n';
   // std::cout << mnist_model.layers[2].get().activations << '\n';
   // std::cout << mnist_model.layers[3].get().activations << '\n';
   // std::cout << mnist_model.layers[1].get().weights << '\n';
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << mnist_model.layers[3].get().weights << '\n';
   
-  // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  auto tik = std::chrono::high_resolution_clock::now();
+  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
-  // auto tok = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  // std::cout << ms_double.count() << "ms \n";
+  auto tok = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  std::cout << ms_double.count() << "ms \n";
 
   // mnist_model.test(test_images, test_labels, mini_batch_size);
 
