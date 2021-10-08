@@ -245,6 +245,22 @@ public:
     }
     return os;
   }
+  void print_np_page(int depth_d, int block_d)
+  {
+    float* result = read();
+    std::cout << '[';
+    for (int i = 0; i < height; ++i)
+    {
+      std::cout << '[';
+      for (int j = 0; j < width; ++j)
+      {
+        std::cout << result[block_d * depth * height * width + depth_d * height * width + i * width + j] << ", ";
+      }
+      std::cout << "], \n";
+    }	
+    std::cout << "] \n";
+    
+  }
   __device__ __forceinline__ float* at(int row, int col, int page=0, int block=0)
   {
     if (row < 0 || row >= height || col < 0 || col >= width)
@@ -1704,6 +1720,16 @@ void testCuda()
     std::cout << "Cuda Not Working. Factory Reset Runtime. \n";
   }
 }
+void print_column_np(Tensor& tens, int column=0)
+{
+  float* result = tens.read();
+  std::cout << '[';
+  for (int j = 0; j < tens.height; ++j)
+  {
+    std::cout << result[j * tens.width + column] << ", ";
+  }
+  std::cout << "] \n";
+}
 
 int main()
 {
@@ -1732,7 +1758,7 @@ int main()
   auto layer2 = Convolutional(5, {3, 3});
 
   // auto layer3 = Regular(32);
-  auto layer3 = FCfromConv(128);
+  auto layer3 = FCfromConv(16);
   // auto layer3 = Convolutional(2, {4, 4});
 
   // auto layer4 = FCfromConv(10, softmax);
@@ -1749,33 +1775,63 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.forward_pass(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.backprop(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.weight_update(false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // std::cout << mnist_model.layers[0].get().activations << '\n';
-  // std::cout << mnist_model.layers[2].get().activations << '\n';
-  // std::cout << mnist_model.layers[3].get().activations << '\n';
-  // std::cout << mnist_model.layers[1].get().weights << '\n';
-  // std::cout << mnist_model.layers[2].get().weights << '\n';
-  // std::cout << mnist_model.layers[3].get().weights << '\n';
+  std::cout << "layer 2 weights before: \n";
+  std::cout << mnist_model.layers[1].get().weights << '\n';
+  std::cout << "layer 3 weights before: \n";
+  std::cout << mnist_model.layers[2].get().weights << '\n';
+  std::cout << "layer 4 weights before: \n";
+  std::cout << mnist_model.layers[3].get().weights << '\n';
+  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.forward_pass(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.backprop(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.layers[1].get().errors.print_np_page(0, 0);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 0);
+  // mnist_model.layers[1].get().errors.print_np_page(0, 1);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 1);
+  // mnist_model.layers[1].get().errors.print_np_page(0, 2);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 2);
+  // mnist_model.layers[1].get().errors.print_np_page(0, 3);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 3);
+  // mnist_model.layers[1].get().errors.print_np_page(0, 4);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 4);
+  std::cout << "layer 1 act: \n";
+  std::cout << mnist_model.layers[0].get().activations << '\n';
+  std::cout << "layer 2 act: \n";
+  std::cout << mnist_model.layers[1].get().activations << '\n';
+  std::cout << "layer 3 act: \n";
+  std::cout << mnist_model.layers[2].get().activations << '\n';
+  std::cout << "layer 4 act: \n";
+  std::cout << mnist_model.layers[3].get().pre_activations << '\n';
+  std::cout << "layer 2 errs: \n";
+  std::cout << mnist_model.layers[1].get().errors << '\n';
+  std::cout << "layer 3 errs: \n";
+  std::cout << mnist_model.layers[2].get().errors << '\n';
+  std::cout << "layer 4 errs: \n";
+  std::cout << mnist_model.layers[3].get().errors << '\n';
+  std::cout << "layer 2 weights: \n";
+  std::cout << mnist_model.layers[1].get().weights << '\n';
+  std::cout << "layer 3 weights: \n";
+  std::cout << mnist_model.layers[2].get().weights << '\n';
+  std::cout << "layer 4 weights: \n";
+  std::cout << mnist_model.layers[3].get().weights << '\n';
   
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 7, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
 
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
 
-  mnist_model.test(test_images, test_labels, mini_batch_size);
+  // mnist_model.test(test_images, test_labels, mini_batch_size);
 
   return 0;
 }
