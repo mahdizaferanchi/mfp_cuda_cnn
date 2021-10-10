@@ -1773,7 +1773,15 @@ int main()
 
   size_t mini_batch_size {4};
 
-  mnist_model.finalize(mini_batch_size);
+  // mnist_model.finalize(mini_batch_size);
+
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
+
 
   std::cout << "layer 2 weights before: \n";
   std::cout << mnist_model.layers[1].get().weights << '\n';
@@ -1793,16 +1801,16 @@ int main()
   mnist_model.weight_update(false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.layers[1].get().errors.print_np_page(0, 0);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 0);
-  // mnist_model.layers[1].get().errors.print_np_page(0, 1);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 1);
-  // mnist_model.layers[1].get().errors.print_np_page(0, 2);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 2);
-  // mnist_model.layers[1].get().errors.print_np_page(0, 3);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 3);
-  // mnist_model.layers[1].get().errors.print_np_page(0, 4);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 4);
+  mnist_model.layers[1].get().errors.print_np_page(0, 0);
+  mnist_model.layers[0].get().activations.print_np_page(0, 0);
+  mnist_model.layers[1].get().errors.print_np_page(0, 1);
+  mnist_model.layers[0].get().activations.print_np_page(0, 1);
+  mnist_model.layers[1].get().errors.print_np_page(0, 2);
+  mnist_model.layers[0].get().activations.print_np_page(0, 2);
+  mnist_model.layers[1].get().errors.print_np_page(0, 3);
+  mnist_model.layers[0].get().activations.print_np_page(0, 3);
+  mnist_model.layers[1].get().errors.print_np_page(0, 4);
+  mnist_model.layers[0].get().activations.print_np_page(0, 4);
   std::cout << "layer 1 act: \n";
   std::cout << mnist_model.layers[0].get().activations << '\n';
   std::cout << "layer 2 act: \n";
