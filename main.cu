@@ -254,9 +254,16 @@ public:
       std::cout << '[';
       for (int j = 0; j < width; ++j)
       {
-        std::cout << result[block_d * depth * height * width + depth_d * height * width + i * width + j] << ", ";
+        std::cout << result[block_d * depth * height * width + depth_d * height * width + i * width + j];
+        if (j != width - 1) {
+          std::cout << ", ";
+        }
       }
-      std::cout << "], \n";
+      std::cout << "]";
+      if (i != height - 1) {
+        std::cout << ", ";
+        std::cout << '\n';
+      }
     }	
     std::cout << "] \n";
     
@@ -1773,7 +1780,7 @@ int main()
 
   size_t mini_batch_size {4};
 
-  // mnist_model.finalize(mini_batch_size);
+  mnist_model.finalize(mini_batch_size);
 
   // auto tik = std::chrono::high_resolution_clock::now();
   // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
@@ -1801,15 +1808,15 @@ int main()
   mnist_model.weight_update(false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.layers[1].get().errors.print_np_page(0, 0);
+  mnist_model.layers[1].get().errors.print_np_page(4, 0);
   mnist_model.layers[0].get().activations.print_np_page(0, 0);
-  mnist_model.layers[1].get().errors.print_np_page(0, 1);
+  mnist_model.layers[1].get().errors.print_np_page(4, 1);
   mnist_model.layers[0].get().activations.print_np_page(0, 1);
-  mnist_model.layers[1].get().errors.print_np_page(0, 2);
+  mnist_model.layers[1].get().errors.print_np_page(4, 2);
   mnist_model.layers[0].get().activations.print_np_page(0, 2);
-  mnist_model.layers[1].get().errors.print_np_page(0, 3);
+  mnist_model.layers[1].get().errors.print_np_page(4, 3);
   mnist_model.layers[0].get().activations.print_np_page(0, 3);
-  mnist_model.layers[1].get().errors.print_np_page(0, 4);
+  mnist_model.layers[1].get().errors.print_np_page(4, 4);
   mnist_model.layers[0].get().activations.print_np_page(0, 4);
   std::cout << "layer 1 act: \n";
   std::cout << mnist_model.layers[0].get().activations << '\n';
