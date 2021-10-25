@@ -731,7 +731,7 @@ __global__ void wts_ll_acts_mul_errs(Tensor map, Tensor filter, Tensor out)
   int yIdx = j * 4;
   int mapIdx = (k / filter.depth) / map.fourth;
   int batchIdx = (k / filter.depth) % map.fourth;
-  int filterIdx = k % (map.fourth);
+  int filterIdx = k % (filter.depth);
 
   for (int vIdx = 0; vIdx < 4; ++vIdx)
   {
@@ -1790,12 +1790,12 @@ int main()
   // std::cout << ms_double.count() << "ms \n";
 
 
-  std::cout << "layer 2 weights before: \n";
-  std::cout << mnist_model.layers[1].get().weights << '\n';
-  std::cout << "layer 3 weights before: \n";
-  std::cout << mnist_model.layers[2].get().weights << '\n';
-  std::cout << "layer 4 weights before: \n";
-  std::cout << mnist_model.layers[3].get().weights << '\n';
+  // std::cout << "layer 2 weights before: \n";
+  // std::cout << mnist_model.layers[1].get().weights << '\n';
+  // std::cout << "layer 3 weights before: \n";
+  // std::cout << mnist_model.layers[2].get().weights << '\n';
+  // std::cout << "layer 4 weights before: \n";
+  // std::cout << mnist_model.layers[3].get().weights << '\n';
   mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
@@ -1808,36 +1808,36 @@ int main()
   mnist_model.weight_update(false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.layers[1].get().errors.print_np_page(4, 0);
-  mnist_model.layers[0].get().activations.print_np_page(0, 0);
-  mnist_model.layers[1].get().errors.print_np_page(4, 1);
-  mnist_model.layers[0].get().activations.print_np_page(0, 1);
-  mnist_model.layers[1].get().errors.print_np_page(4, 2);
-  mnist_model.layers[0].get().activations.print_np_page(0, 2);
-  mnist_model.layers[1].get().errors.print_np_page(4, 3);
-  mnist_model.layers[0].get().activations.print_np_page(0, 3);
-  mnist_model.layers[1].get().errors.print_np_page(4, 4);
-  mnist_model.layers[0].get().activations.print_np_page(0, 4);
-  std::cout << "layer 1 act: \n";
-  std::cout << mnist_model.layers[0].get().activations << '\n';
-  std::cout << "layer 2 act: \n";
-  std::cout << mnist_model.layers[1].get().activations << '\n';
-  std::cout << "layer 3 act: \n";
-  std::cout << mnist_model.layers[2].get().activations << '\n';
-  std::cout << "layer 4 act: \n";
-  std::cout << mnist_model.layers[3].get().pre_activations << '\n';
-  std::cout << "layer 2 errs: \n";
-  std::cout << mnist_model.layers[1].get().errors << '\n';
-  std::cout << "layer 3 errs: \n";
-  std::cout << mnist_model.layers[2].get().errors << '\n';
-  std::cout << "layer 4 errs: \n";
-  std::cout << mnist_model.layers[3].get().errors << '\n';
-  std::cout << "layer 2 weights: \n";
-  std::cout << mnist_model.layers[1].get().weights << '\n';
-  std::cout << "layer 3 weights: \n";
-  std::cout << mnist_model.layers[2].get().weights << '\n';
-  std::cout << "layer 4 weights: \n";
-  std::cout << mnist_model.layers[3].get().weights << '\n';
+  // mnist_model.layers[1].get().errors.print_np_page(4, 0);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 0);
+  // mnist_model.layers[1].get().errors.print_np_page(4, 1);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 1);
+  // mnist_model.layers[1].get().errors.print_np_page(4, 2);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 2);
+  // mnist_model.layers[1].get().errors.print_np_page(4, 3);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 3);
+  // mnist_model.layers[1].get().errors.print_np_page(4, 4);
+  // mnist_model.layers[0].get().activations.print_np_page(0, 4);
+  // std::cout << "layer 1 act: \n";
+  // std::cout << mnist_model.layers[0].get().activations << '\n';
+  // std::cout << "layer 2 act: \n";
+  // std::cout << mnist_model.layers[1].get().activations << '\n';
+  // std::cout << "layer 3 act: \n";
+  // std::cout << mnist_model.layers[2].get().activations << '\n';
+  // std::cout << "layer 4 act: \n";
+  // std::cout << mnist_model.layers[3].get().pre_activations << '\n';
+  // std::cout << "layer 2 errs: \n";
+  // std::cout << mnist_model.layers[1].get().errors << '\n';
+  // std::cout << "layer 3 errs: \n";
+  // std::cout << mnist_model.layers[2].get().errors << '\n';
+  // std::cout << "layer 4 errs: \n";
+  // std::cout << mnist_model.layers[3].get().errors << '\n';
+  // std::cout << "layer 2 weights: \n";
+  // std::cout << mnist_model.layers[1].get().weights << '\n';
+  // std::cout << "layer 3 weights: \n";
+  // std::cout << mnist_model.layers[2].get().weights << '\n';
+  // std::cout << "layer 4 weights: \n";
+  // std::cout << mnist_model.layers[3].get().weights << '\n';
   
   // auto tik = std::chrono::high_resolution_clock::now();
   // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
