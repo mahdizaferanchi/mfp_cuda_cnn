@@ -1782,12 +1782,12 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  auto tik = std::chrono::high_resolution_clock::now();
+  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
-  // auto tok = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  // std::cout << ms_double.count() << "ms \n";
+  auto tok = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  std::cout << ms_double.count() << "ms \n";
 
 
   // std::cout << "layer 2 weights before: \n";
@@ -1796,18 +1796,18 @@ int main()
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << "layer 4 weights before: \n";
   // std::cout << mnist_model.layers[3].get().weights << '\n';
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.forward_pass(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.backprop(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.weight_update(false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.forward_pass(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.weight_update(false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   // mnist_model.layers[1].get().errors.print_np_page(4, 0);
   // mnist_model.layers[0].get().activations.print_np_page(0, 0);
   // mnist_model.layers[1].get().errors.print_np_page(4, 1);
@@ -1832,8 +1832,8 @@ int main()
   // std::cout << mnist_model.layers[2].get().errors << '\n';
   // std::cout << "layer 4 errs: \n";
   // std::cout << mnist_model.layers[3].get().errors << '\n';
-  // std::cout << "layer 2 weights: \n";
-  // std::cout << mnist_model.layers[1].get().weights << '\n';
+  std::cout << "layer 2 weights: \n";
+  std::cout << mnist_model.layers[1].get().weights << '\n';
   // std::cout << "layer 3 weights: \n";
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << "layer 4 weights: \n";
