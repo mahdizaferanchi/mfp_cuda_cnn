@@ -268,6 +268,20 @@ public:
     std::cout << "] \n";
     
   }
+  void make_file(std::string path)
+  {
+    float* result = read();
+    std::ofstream tensor_file(path);
+    tensor_file << fourth << ' ';
+    tensor_file << depth << ' ';
+    tensor_file << height << ' ';
+    tensor_file << width << ' ';
+    for (int counter = 0; counter < height * width * depth * fourth; ++counter)
+    {
+      tensor_file << result[counter] << ' ';
+    }
+    tensor_file.close();
+  }
   __device__ __forceinline__ float* at(int row, int col, int page=0, int block=0)
   {
     if (row < 0 || row >= height || col < 0 || col >= width)
@@ -1782,12 +1796,15 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  mnist_model.layers[1].get().activations.make_file("./tensor.t");
+  std::cout << mnist_model.layers[1].get().activations << '\n';
 
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
 
 
   // std::cout << "layer 2 weights before: \n";
@@ -1832,8 +1849,8 @@ int main()
   // std::cout << mnist_model.layers[2].get().errors << '\n';
   // std::cout << "layer 4 errs: \n";
   // std::cout << mnist_model.layers[3].get().errors << '\n';
-  std::cout << "layer 2 weights: \n";
-  std::cout << mnist_model.layers[1].get().weights << '\n';
+  // std::cout << "layer 2 weights: \n";
+  // std::cout << mnist_model.layers[1].get().weights << '\n';
   // std::cout << "layer 3 weights: \n";
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << "layer 4 weights: \n";
@@ -1848,6 +1865,20 @@ int main()
 
   // mnist_model.test(test_images, test_labels, mini_batch_size);
 
+  return 0;
+}
+
+int main2()
+{
+  float a = 5;
+  int size = 2;
+  std::ofstream my_tensor("./tensor.t");
+  my_tensor << size << ' ' << size << " 1 1 ";
+  my_tensor << a << ' '; 
+  my_tensor << a << ' '; 
+  my_tensor << a << ' '; 
+  my_tensor << a; 
+  my_tensor.close();
   return 0;
 }
 
