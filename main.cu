@@ -1796,9 +1796,6 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  mnist_model.layers[1].get().activations.make_file("./tensor.t");
-  std::cout << mnist_model.layers[1].get().activations << '\n';
-
   // auto tik = std::chrono::high_resolution_clock::now();
   // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
@@ -1807,34 +1804,28 @@ int main()
   // std::cout << ms_double.count() << "ms \n";
 
 
+  mnist_model.layers[1].get().weights.make_file("l2_weights.t");
   // std::cout << "layer 2 weights before: \n";
   // std::cout << mnist_model.layers[1].get().weights << '\n';
   // std::cout << "layer 3 weights before: \n";
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << "layer 4 weights before: \n";
   // std::cout << mnist_model.layers[3].get().weights << '\n';
-  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.forward_pass(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.backprop(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.weight_update(false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.layers[1].get().errors.print_np_page(4, 0);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 0);
-  // mnist_model.layers[1].get().errors.print_np_page(4, 1);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 1);
-  // mnist_model.layers[1].get().errors.print_np_page(4, 2);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 2);
-  // mnist_model.layers[1].get().errors.print_np_page(4, 3);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 3);
-  // mnist_model.layers[1].get().errors.print_np_page(4, 4);
-  // mnist_model.layers[0].get().activations.print_np_page(0, 4);
+  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.forward_pass(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.backprop(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.layers[1].get().errors.make_file("l2_errs.t");
+  mnist_model.layers[0].get().activations.make_file("l1_acts.t");
+  mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.layers[1].get().weights.make_file("updated_l2_weights.t");
   // std::cout << "layer 1 act: \n";
   // std::cout << mnist_model.layers[0].get().activations << '\n';
   // std::cout << "layer 2 act: \n";
@@ -1867,18 +1858,3 @@ int main()
 
   return 0;
 }
-
-int main2()
-{
-  float a = 5;
-  int size = 2;
-  std::ofstream my_tensor("./tensor.t");
-  my_tensor << size << ' ' << size << " 1 1 ";
-  my_tensor << a << ' '; 
-  my_tensor << a << ' '; 
-  my_tensor << a << ' '; 
-  my_tensor << a; 
-  my_tensor.close();
-  return 0;
-}
-
