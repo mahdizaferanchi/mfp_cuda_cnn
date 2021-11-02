@@ -1802,6 +1802,9 @@ int main()
   // auto tok = std::chrono::high_resolution_clock::now();
   // std::chrono::duration<double, std::milli> ms_double = tok - tik;
   // std::cout << ms_double.count() << "ms \n";
+  // cudaDeviceSynchronize();
+  mnist_model.single_train(train_images[0], train_labels[0], false);
+  cudaDeviceSynchronize();
 
 
   mnist_model.layers[1].get().weights.make_file("l2_weights.t");
@@ -1811,7 +1814,7 @@ int main()
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << "layer 4 weights before: \n";
   // std::cout << mnist_model.layers[3].get().weights << '\n';
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  mnist_model.move_batch(train_images[4], train_labels[4], mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   mnist_model.forward_pass(mini_batch_size, false);
