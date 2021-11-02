@@ -1238,17 +1238,20 @@ public:
       1, 
       dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
     >>>(weights, G_matrix, transformed_weights);
+    cudaDeviceSynchronize();
 
     wts_input_mul_filter<<<
       dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
       dim3(transformed_input.height / 4, transformed_input.width / 4)
     >>>(transformed_input, transformed_weights, forward_inter);
     // wts = winograd transform space
+    cudaDeviceSynchronize();
 
     inverse_transform_with_bias<<<
       dim3(1, 1, forward_inter.depth * forward_inter.fourth),
       dim3(forward_inter.height / 4, forward_inter.width / 4)
     >>>(forward_inter, A_matrix, biases, pre_activations);
+    cudaDeviceSynchronize();
 
     conv_relu_kernel<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
@@ -1297,6 +1300,7 @@ public:
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
       get_threads(errors.height, errors.width)
     >>>(errors, pre_activations, errors);
+    cudaDeviceSynchronize();
   }
 
   void backward_fc(Tensor& nlw, Tensor& nle, cudaStream_t s)
@@ -1307,6 +1311,7 @@ public:
       0,
       s
     >>>(nle, nlw, errors);
+    cudaDeviceSynchronize();
 
     conv_relu_derivative<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
@@ -1314,6 +1319,7 @@ public:
       0,
       s
     >>>(pre_activations, pre_activations);
+    cudaDeviceSynchronize();
 
     elementwisemul<<<
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
@@ -1321,6 +1327,7 @@ public:
       0,
       s
     >>>(errors, pre_activations, errors);
+    cudaDeviceSynchronize();
   }
 
   void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) // convback
@@ -1363,6 +1370,7 @@ public:
       0,
       s
     >>>(ll_transformed_acts, transformed_errors, weight_update_inter);
+    cudaDeviceSynchronize();
 
     // inverse transform
     inverse_transform_for_weights<<<
@@ -1371,6 +1379,7 @@ public:
       0,
       s
     >>>(weight_update_inter, A2_matrix, learning_rate / (float)ll_transformed_acts.fourth, weights);
+    cudaDeviceSynchronize();
 
   }
 
@@ -1630,7 +1639,9 @@ public:
     move_batch(image, label, batch_size, false);
     cudaDeviceSynchronize();
     forward_pass(batch_size, false);
+    cudaDeviceSynchronize();
     backprop(batch_size, false);
+    cudaDeviceSynchronize();
     weight_update(false);
     cudaDeviceSynchronize();
   }
@@ -1682,6 +1693,7 @@ public:
       {
         bool use_alt {false};
         reset_correct_predictions();
+        cudaDeviceSynchronize();
         int num_of_data = images.size;
         auto tik = std::chrono::high_resolution_clock::now();
         move_batch(images[0], labels[0], batch_size, use_alt);
@@ -1693,8 +1705,11 @@ public:
             labels[loopIdx], 
             batch_size, 
             !use_alt);
+          cudaDeviceSynchronize();
           forward_pass(batch_size, use_alt);
+          cudaDeviceSynchronize();
           backprop(batch_size, use_alt);
+          cudaDeviceSynchronize();
           weight_update(use_alt);
           cudaDeviceSynchronize();
           use_alt = !use_alt;
@@ -1796,8 +1811,8 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  auto tik = std::chrono::high_resolution_clock::now();
+  mnist_model.train_sequential(train_images, train_labels, 1, mini_batch_size);
 
   // auto tok = std::chrono::high_resolution_clock::now();
   // std::chrono::duration<double, std::milli> ms_double = tok - tik;
@@ -1807,7 +1822,7 @@ int main()
   cudaDeviceSynchronize();
 
 
-  mnist_model.layers[1].get().weights.make_file("l2_weights.t");
+  mnist_model.layers[1].get().weights.make_file("probs_broken_l2_weights.t");
   // std::cout << "layer 2 weights before: \n";
   // std::cout << mnist_model.layers[1].get().weights << '\n';
   // std::cout << "layer 3 weights before: \n";
