@@ -1811,25 +1811,25 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train_sequential(train_images, train_labels, 1, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train_sequential(train_images, train_labels, 1, mini_batch_size);
 
   // auto tok = std::chrono::high_resolution_clock::now();
   // std::chrono::duration<double, std::milli> ms_double = tok - tik;
   // std::cout << ms_double.count() << "ms \n";
   // cudaDeviceSynchronize();
-  mnist_model.single_train(train_images[0], train_labels[0], false);
-  cudaDeviceSynchronize();
+  // mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
+  // cudaDeviceSynchronize();
 
 
-  mnist_model.layers[1].get().weights.make_file("probs_broken_l2_weights.t");
+  mnist_model.layers[1].get().weights.make_file("l2_weights.t");
   // std::cout << "layer 2 weights before: \n";
   // std::cout << mnist_model.layers[1].get().weights << '\n';
   // std::cout << "layer 3 weights before: \n";
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << "layer 4 weights before: \n";
   // std::cout << mnist_model.layers[3].get().weights << '\n';
-  mnist_model.move_batch(train_images[4], train_labels[4], mini_batch_size, false);
+  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   mnist_model.forward_pass(mini_batch_size, false);
@@ -1844,6 +1844,7 @@ int main()
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   mnist_model.layers[1].get().weights.make_file("updated_l2_weights.t");
+  layer2.ll_transformed_acts.make_file("transformed_l1_acts.t");
   // std::cout << "layer 1 act: \n";
   // std::cout << mnist_model.layers[0].get().activations << '\n';
   // std::cout << "layer 2 act: \n";
