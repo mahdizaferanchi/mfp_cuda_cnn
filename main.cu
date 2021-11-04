@@ -1363,7 +1363,7 @@ public:
     >>>(errors, G2_matrix, transformed_errors);
     cudaDeviceSynchronize();
 
-    // mul in wts with R * S reslut
+    // mul in wts with R * S results
     wts_ll_acts_mul_errs<<<
       dim3(1, 1, ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth),
       dim3(ll_transformed_acts.height / 4, ll_transformed_acts.width / 4),
@@ -1845,6 +1845,8 @@ int main()
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   mnist_model.layers[1].get().weights.make_file("updated_l2_weights.t");
   layer2.ll_transformed_acts.make_file("transformed_l1_acts.t");
+  layer2.transformed_errors.make_file("transformed_l2_errors.t");
+  layer2.weight_update_inter.make_file("l2_weight_update_inter.t");
   // std::cout << "layer 1 act: \n";
   // std::cout << mnist_model.layers[0].get().activations << '\n';
   // std::cout << "layer 2 act: \n";
