@@ -1282,6 +1282,7 @@ public:
 
   void backward_conv(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
+    nle.make_file("l3_errs.t");
     flipped_filter_transform<<<
       1, 
       dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth * transformed_flipped_weights.fourth)
@@ -1847,7 +1848,6 @@ int main()
   mnist_model.forward_pass(mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.layers[2].get().errors.make_file("l3_errs.t");
   mnist_model.layers[2].get().weights.make_file("l3_weights.t");
   layer2.pre_activations.make_file("l2_pre_activations_before.t");
   mnist_model.backprop(mini_batch_size, false);
