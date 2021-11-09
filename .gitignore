@@ -3,3 +3,5 @@ mnist_train_small.csv
 mnist_with_cuda.sublime-project
 mnist_with_cuda.sublime-workspace
 a.exe
+temp_ll_acts_transformed.txt
+transformed_errors.txt
