@@ -512,3 +512,24 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
   // std::cout << mnist_model.layers[2].get().weights << '\n';
   // std::cout << "layer 4 weights: \n";
   // std::cout << mnist_model.layers[3].get().weights << '\n';
+
+  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.forward_pass(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.layers[2].get().weights.make_file("l3_weights.t");
+  // layer2.pre_activations.make_file("l2_pre_activations_before.t");
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // layer2.transformed_flipped_weights.make_file("l2_transformed_flipped_weights.t");
+  // layer2.transfromed_nle.make_file("l2_transfromed_nle.t");
+  // layer2.backward_conv_inter.make_file("l2_backward_conv_inter.t");
+  // layer2.errors.make_file("l2_errors.t");
+  // layer2.pre_activations.make_file("l2_pre_activations.t");
+  // mnist_model.weight_update(false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+

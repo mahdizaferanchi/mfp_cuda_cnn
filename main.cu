@@ -1842,34 +1842,22 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.forward_pass(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.layers[2].get().weights.make_file("l3_weights.t");
-  layer2.pre_activations.make_file("l2_pre_activations_before.t");
-  mnist_model.backprop(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  layer2.transformed_flipped_weights.make_file("l2_transformed_flipped_weights.t");
-  layer2.transfromed_nle.make_file("l2_transfromed_nle.t");
-  layer2.backward_conv_inter.make_file("l2_backward_conv_inter.t");
-  layer2.errors.make_file("l2_errors.t");
-  layer2.pre_activations.make_file("l2_pre_activations.t");
-  mnist_model.weight_update(false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-
   // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
+  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
   // auto tok = std::chrono::high_resolution_clock::now();
   // std::chrono::duration<double, std::milli> ms_double = tok - tik;
   // std::cout << ms_double.count() << "ms \n";
   
   // mnist_model.test(test_images, test_labels, mini_batch_size);
+
+  mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
+
+  // layer2.weights.make_file("l2_w_a1e.t");
+  // layer3.weights.make_file("l3_w_a1e.t");
+
+  // layer2.activations.make_file("l2_w_a1e.t");
+  layer3.activations.make_file("l3_acts_a1e.t");
 
   return 0;
 }
