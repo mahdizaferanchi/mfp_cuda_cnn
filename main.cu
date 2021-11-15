@@ -1282,7 +1282,7 @@ public:
 
   void backward_conv(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
-    // nle.make_file("l3_errs.t");
+    nle.make_file("l3_errs.t");
     flipped_filter_transform<<<
       1, 
       dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth * transformed_flipped_weights.fourth)
@@ -1805,25 +1805,27 @@ int main()
   // PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
   // PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", false);
   // PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
-  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
+  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", true);
   PinnedData<int, 10000, 1> test_labels("../input/mnistdata/mnist_test.csv");
-  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", false);
+  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
   PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
 
   // std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
-  // auto layer1 = Regular(784, relu, true);
-  auto layer1 = Convolutional(28, 28);
+  auto layer1 = Regular(784, relu, true);
+  // auto layer1 = Convolutional(28, 28);
   // auto layer1 = Convolutional(5, 5);
   
-  // auto layer2 = Regular(32);
+  auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
-  auto layer2 = Convolutional(5, {3, 3});
+  // auto layer2 = Convolutional(5, {3, 3});
 
-  auto layer3 = Convolutional(3, {3, 3});
+  // auto layer3 = Convolutional(3, {3, 3});
+  // auto layer3 = FCfromConv(128);
+  auto layer3 = Regular(128);
 
-  // auto layer3 = Regular(32);
-  auto layer4 = FCfromConv(128);
+  auto layer4 = Regular(128);
+  // auto layer4 = FCfromConv(128);
   // auto layer3 = Convolutional(2, {4, 4});
 
   // auto layer4 = FCfromConv(10, softmax);
@@ -1842,29 +1844,47 @@ int main()
   mnist_model.finalize(mini_batch_size);
 
   auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  mnist_model.train(train_images, train_labels, 2, mini_batch_size);
 
   auto tok = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> ms_double = tok - tik;
   std::cout << ms_double.count() << "ms \n";
+  mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
   
   // mnist_model.test(test_images, test_labels, mini_batch_size);
 
-  mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.move_batch(train_images[mini_batch_size], train_labels[mini_batch_size], mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.forward_pass(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.layers[2].get().weights.make_file("l3_weights.t");
+  // layer2.pre_activations.make_file("l2_pre_activations_before.t");
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.weight_update(false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  layer1.weights.make_file("l1_weights.t");
+  layer2.weights.make_file("l2_weights.t");
+  layer3.weights.make_file("l3_weights.t");
+  layer4.weights.make_file("l4_weights.t");
+  layer5.weights.make_file("l5_weights.t");
 
-  layer2.weights.make_file("l2_w_a1e.t");
-  layer3.weights.make_file("l3_w_a1e.t");
+  // layer2.weights.make_file("l2_w_a1e.t");
+  // layer3.weights.make_file("l3_w_a1e.t");
 
-  layer2.errors.make_file("l2_e_a1e.t");
-  layer3.errors.make_file("l3_e_a1e.t");
+  // layer2.pre_activations.make_file("l2_pre_activations.t");
+  // layer2.errors.make_file("l2_errors.t");
+  // layer3.errors.make_file("l3_e_a1e.t");
 
-  layer2.activations.make_file("l2_acts_a1e.t");
-  layer3.activations.make_file("l3_acts_a1e.t");
+  // layer2.activations.make_file("l2_acts_a1e.t");
+  // layer3.activations.make_file("l3_acts_a1e.t");
 
-  layer2.weight_update_inter.make_file("l2_wi_a1e.t");
-  layer3.weight_update_inter.make_file("l3_wi_a1e.t");
+  // layer2.weight_update_inter.make_file("l2_wi_a1e.t");
+  // layer3.weight_update_inter.make_file("l3_wi_a1e.t");
 
   return 0;
 }
