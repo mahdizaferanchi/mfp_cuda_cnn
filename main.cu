@@ -875,7 +875,12 @@ __global__ void softmax_kernel(Tensor in, Tensor out)
     {
       sum += expf(*in.at(i, loopIdx));
     }
-    *out.at(i, j) = expf(*in.at(i, j)) / sum;
+    float numerator = expf(*in.at(i, j)); 
+    if (isinf(numerator)) {
+      *out.at(i, j) = 1.0f;
+    } else {
+      *out.at(i, j) = numerator / sum;
+    }
   }
 }
 
@@ -1799,6 +1804,7 @@ int main()
   testCuda();
 
   std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
+  // std::srand(static_cast<unsigned int>(std::time(nullptr)));
   std::rand(); 
 
   // PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", false);
@@ -1843,16 +1849,23 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  auto tik = std::chrono::high_resolution_clock::now();
+  mnist_model.train(train_images, train_labels, 2, mini_batch_size);
 
-  // auto tok = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  // std::cout << ms_double.count() << "ms \n";
+  auto tok = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  std::cout << ms_double.count() << "ms \n";
   // mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
   
   // mnist_model.test(test_images, test_labels, mini_batch_size);
+  
+  // for (int loopIdx = 0; loopIdx < 400; loopIdx += mini_batch_size)
+  // {
+  //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
+  // }
 
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
@@ -1862,9 +1875,9 @@ int main()
   mnist_model.backprop(mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.weight_update(false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   layer1.weights.make_file("l1_weights.t");
   layer2.weights.make_file("l2_weights.t");
   layer3.weights.make_file("l3_weights.t");
