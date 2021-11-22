@@ -1850,7 +1850,7 @@ int main()
   mnist_model.finalize(mini_batch_size);
 
   auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 2, mini_batch_size);
+  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
   auto tok = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> ms_double = tok - tik;
