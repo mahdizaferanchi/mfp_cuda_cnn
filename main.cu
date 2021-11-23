@@ -1811,28 +1811,30 @@ int main()
   // PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
   // PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", false);
   // PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
-  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
+  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", true);
   PinnedData<int, 10000, 1> test_labels("../input/mnistdata/mnist_test.csv");
-  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", false);
+  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
   PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
 
   // std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
-  // auto layer1 = Regular(784, relu, true);
-  auto layer1 = Convolutional(28, 28);
+  auto layer1 = Regular(784, relu, true);
+  // auto layer1 = Convolutional(28, 28);
   // auto layer1 = Convolutional(5, 5);
   
-  // auto layer2 = Regular(128);
+  auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
-  auto layer2 = Convolutional(5, {3, 3});
+  // auto layer2 = Convolutional(5, {3, 3});
 
   // auto layer3 = Convolutional(3, {3, 3});
-  auto layer3 = FCfromConv(128);
-  // auto layer3 = Regular(128);
+  // auto layer3 = FCfromConv(128);
+  auto layer3 = Regular(128);
 
   auto layer4 = Regular(128);
   // auto layer4 = FCfromConv(128);
   // auto layer3 = Convolutional(2, {4, 4});
+
+  auto layer4point5 = Regular(128);
 
   // auto layer4 = FCfromConv(10, softmax);
   auto layer5 = Regular(10, softmax);
@@ -1843,6 +1845,7 @@ int main()
   mnist_model.add(layer2);
   mnist_model.add(layer3);
   mnist_model.add(layer4);
+  mnist_model.add(layer4point5);
   mnist_model.add(layer5);
 
   size_t mini_batch_size {4};
@@ -1855,29 +1858,29 @@ int main()
   auto tok = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> ms_double = tok - tik;
   std::cout << ms_double.count() << "ms \n";
-  // mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
+  mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
   
-  // mnist_model.test(test_images, test_labels, mini_batch_size);
+  mnist_model.test(test_images, test_labels, mini_batch_size);
   
   // for (int loopIdx = 0; loopIdx < 400; loopIdx += mini_batch_size)
   // {
   //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
   // }
 
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.forward_pass(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.backprop(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.weight_update(false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.forward_pass(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.weight_update(false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   layer1.weights.make_file("l1_weights.t");
   layer2.weights.make_file("l2_weights.t");
   layer3.weights.make_file("l3_weights.t");
