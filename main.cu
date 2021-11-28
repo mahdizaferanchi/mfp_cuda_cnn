@@ -1510,7 +1510,16 @@ out_err_fptr get_out_err_func(
     return nullptr;
   }
 }
-
+template<typename ... Args>
+std::string string_format( const std::string& format, Args ... args )
+{
+  int size_s = std::snprintf( nullptr, 0, format.c_str(), args ... ) + 1; // Extra space for '\0'
+  if( size_s <= 0 ){ throw std::runtime_error( "Error during formatting." ); }
+  auto size = static_cast<size_t>( size_s );
+  auto buf = std::make_unique<char[]>( size );
+  std::snprintf( buf.get(), size, format.c_str(), args ... );
+  return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
+}
 class Model
 {
 public:
@@ -1744,6 +1753,10 @@ public:
           cudaDeviceSynchronize();
           weight_update(use_alt);
           cudaDeviceSynchronize();
+          // if (loopIdx % 20 == 0 && loopIdx < 200) 
+          // {
+          //   layers[4].get().weights.make_file(string_format("l5_w_%d", loopIdx));
+          // }
           use_alt = !use_alt;
         }
         auto tok = std::chrono::high_resolution_clock::now();
@@ -1845,20 +1858,20 @@ int main()
   mnist_model.add(layer2);
   mnist_model.add(layer3);
   mnist_model.add(layer4);
-  mnist_model.add(layer4point5);
+  // mnist_model.add(layer4point5);
   mnist_model.add(layer5);
 
   size_t mini_batch_size {4};
 
   mnist_model.finalize(mini_batch_size);
 
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
-  mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
+  // mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
   
   mnist_model.test(test_images, test_labels, mini_batch_size);
   
@@ -1867,14 +1880,14 @@ int main()
   //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
   // }
 
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.forward_pass(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.forward_pass(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   // mnist_model.backprop(mini_batch_size, false);
   // cudaDeviceSynchronize();
   // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
