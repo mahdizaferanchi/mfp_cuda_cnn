@@ -856,6 +856,20 @@ __global__ void elementwisemul(Tensor left, Tensor right, Tensor out)
     *out.at(i, j, depthIdx, fourthIdx) = *left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx));
 }
 
+__global__ void elementwisemulwithclipping(Tensor left, Tensor right, Tensor out)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+  int depthIdx = k / left.fourth;
+  int fourthIdx = k % left.fourth;
+
+  if (i < left.height && j < left.width)
+    *out.at(i, j, depthIdx, fourthIdx) = fminf(fmaxf(*left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx)), -1.0f), 1.0f);
+    // *out.at(i, j, depthIdx, fourthIdx) = *left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx));
+}
+
 __global__ void relu_derivative(Tensor in, Tensor out)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -877,7 +891,21 @@ __global__ void softmax_kernel(Tensor in, Tensor out)
     }
     float numerator = expf(*in.at(i, j)); 
     if (isinf(numerator)) {
-      *out.at(i, j) = 1.0f;
+      bool ismax = true;
+      for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
+      {
+        if (*in.at(i, j) < *in.at(i, loopIdx))
+        {
+          ismax = false;
+          break;
+        }
+      }
+      if (ismax) 
+      {
+        *out.at(i, j) = 1.0f;
+      } else {
+        *out.at(i, j) = 0.0f;
+      }
     } else {
       *out.at(i, j) = numerator / sum;
     }
@@ -1039,7 +1067,6 @@ public:
   virtual size_t get_width() const = 0;
 };
 
-
 class Regular : public Layer
 {
 public:
@@ -1080,7 +1107,7 @@ public:
       0, 
       s
     >>>(pre_activations, pre_activations);
-    elementwisemul<<<
+    elementwisemulwithclipping<<<
       get_grids(errors.height, units), 
       get_threads(errors.height, units), 
       0, 
@@ -1138,106 +1165,6 @@ public:
   }
 };
 
-class Identity : public Layer
-{
-public:
-  size_t units;
-  size_t input_length;
-  bool double_activations;
-  Identity(size_t p_units=16, Activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
-  Layer{act_p}, units{p_units}, input_length{p_input_length}, double_activations{p_double_activations}
-  {}
-  void forward(Tensor& input, cudaStream_t s)
-  {
-    // matmulmat<<<
-    //   get_grids(input.height, units),
-    //   get_threads(input.height, units),
-    //   0, 
-    //   s
-    // >>>(input, weights, pre_activations);
-    // act.f<<<
-    //   get_grids(input.height, units),
-    //   get_threads(input.height, units), 
-    //   0, 
-    //   s
-    // >>>(pre_activations, activations);
-    // cudaDeviceSynchronize();
-    activations.write(input.read());
-    cudaDeviceSynchronize();
-  }
-  void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
-  {
-    // matmulmatT<<<
-    //   get_grids(nle.height, units), 
-    //   get_threads(nle.height, units), 
-    //   0, 
-    //   s
-    // >>>(nle, nlw, errors);
-    // act.d<<<
-    //   get_grids(pre_activations.height, units), 
-    //   get_threads(pre_activations.height, units), 
-    //   0, 
-    //   s
-    // >>>(pre_activations, pre_activations);
-    // elementwisemul<<<
-    //   get_grids(errors.height, units), 
-    //   get_threads(errors.height, units), 
-    //   0, 
-    //   s
-    // >>>(errors, pre_activations, errors);
-    errors.write(nle.read());
-    cudaDeviceSynchronize();
-  }
-
-  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
-  {
-    // weight_update_kernel<<<
-    //   get_grids(weights.height, weights.width),
-    //   get_threads(weights.height, weights.width),
-    //   0, 
-    //   stream
-    // >>>(errors, use_alt ? (ll_iterator)->get().activations_alt : (ll_iterator)->get().activations, weights, learning_rate);
-  }
-
-  void set_input_props(const Layer& ll)
-  {
-    input_length = ll.get_output_size() + ll.get_output_bias_size();
-    // std::cout << input_length << '\n';
-    weights = Tensor(input_length, units);
-  }
-  void initialize_with_batch_size(size_t batch_size, const Layer& ll)
-  {
-    activations = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
-    pre_activations = Tensor(batch_size, units, 1, 1, true, 1.0f);
-    errors = Tensor(batch_size, units, 1, 1, true, 1.0f);
-    if (double_activations)
-      activations_alt = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
-  }
-  void initialize_with_next_layer(const Layer& nl)
-  {
-    // std::cout << nl.weights.height << ' ' << nl.weights.width << '\n'; 
-  }
-  size_t get_output_size() const
-  {
-    return units;
-  }
-  size_t get_output_bias_size() const 
-  {
-    return 1;
-  }
-  size_t get_depth() const
-  {
-    return 1;
-  }
-  size_t get_height() const
-  {
-    return activations.height;
-  }
-  size_t get_width() const
-  {
-    return activations.width;
-  }
-};
 class FCfromConv : public Regular
 {
 public:
@@ -1966,7 +1893,7 @@ int main()
   mnist_model.finalize(mini_batch_size);
 
   auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  mnist_model.train(train_images, train_labels, 4, mini_batch_size);
 
   auto tok = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> ms_double = tok - tik;
@@ -1988,12 +1915,12 @@ int main()
   mnist_model.forward_pass(mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.backprop(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.weight_update(false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.backprop(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   layer1.weights.make_file("l1_weights.t");
   layer2.weights.make_file("l2_weights.t");
   layer3.weights.make_file("l3_weights.t");
