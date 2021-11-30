@@ -1138,6 +1138,106 @@ public:
   }
 };
 
+class Identity : public Layer
+{
+public:
+  size_t units;
+  size_t input_length;
+  bool double_activations;
+  Identity(size_t p_units=16, Activation act_p=relu, bool p_double_activations=false, size_t p_input_length=1):
+  Layer{act_p}, units{p_units}, input_length{p_input_length}, double_activations{p_double_activations}
+  {}
+  void forward(Tensor& input, cudaStream_t s)
+  {
+    // matmulmat<<<
+    //   get_grids(input.height, units),
+    //   get_threads(input.height, units),
+    //   0, 
+    //   s
+    // >>>(input, weights, pre_activations);
+    // act.f<<<
+    //   get_grids(input.height, units),
+    //   get_threads(input.height, units), 
+    //   0, 
+    //   s
+    // >>>(pre_activations, activations);
+    // cudaDeviceSynchronize();
+    activations.write(input.read());
+    cudaDeviceSynchronize();
+  }
+  void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
+  {
+    // matmulmatT<<<
+    //   get_grids(nle.height, units), 
+    //   get_threads(nle.height, units), 
+    //   0, 
+    //   s
+    // >>>(nle, nlw, errors);
+    // act.d<<<
+    //   get_grids(pre_activations.height, units), 
+    //   get_threads(pre_activations.height, units), 
+    //   0, 
+    //   s
+    // >>>(pre_activations, pre_activations);
+    // elementwisemul<<<
+    //   get_grids(errors.height, units), 
+    //   get_threads(errors.height, units), 
+    //   0, 
+    //   s
+    // >>>(errors, pre_activations, errors);
+    errors.write(nle.read());
+    cudaDeviceSynchronize();
+  }
+
+  void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
+  {
+    // weight_update_kernel<<<
+    //   get_grids(weights.height, weights.width),
+    //   get_threads(weights.height, weights.width),
+    //   0, 
+    //   stream
+    // >>>(errors, use_alt ? (ll_iterator)->get().activations_alt : (ll_iterator)->get().activations, weights, learning_rate);
+  }
+
+  void set_input_props(const Layer& ll)
+  {
+    input_length = ll.get_output_size() + ll.get_output_bias_size();
+    // std::cout << input_length << '\n';
+    weights = Tensor(input_length, units);
+  }
+  void initialize_with_batch_size(size_t batch_size, const Layer& ll)
+  {
+    activations = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
+    pre_activations = Tensor(batch_size, units, 1, 1, true, 1.0f);
+    errors = Tensor(batch_size, units, 1, 1, true, 1.0f);
+    if (double_activations)
+      activations_alt = Tensor(batch_size, units + 1, 1, 1, true, 1.0f);
+  }
+  void initialize_with_next_layer(const Layer& nl)
+  {
+    // std::cout << nl.weights.height << ' ' << nl.weights.width << '\n'; 
+  }
+  size_t get_output_size() const
+  {
+    return units;
+  }
+  size_t get_output_bias_size() const 
+  {
+    return 1;
+  }
+  size_t get_depth() const
+  {
+    return 1;
+  }
+  size_t get_height() const
+  {
+    return activations.height;
+  }
+  size_t get_width() const
+  {
+    return activations.width;
+  }
+};
 class FCfromConv : public Regular
 {
 public:
@@ -1816,8 +1916,8 @@ int main()
 {
   testCuda();
 
-  std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
-  // std::srand(static_cast<unsigned int>(std::time(nullptr)));
+  // std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
+  std::srand(static_cast<unsigned int>(std::time(nullptr)));
   std::rand(); 
 
   // PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", false);
@@ -1858,19 +1958,19 @@ int main()
   mnist_model.add(layer2);
   mnist_model.add(layer3);
   mnist_model.add(layer4);
-  // mnist_model.add(layer4point5);
+  mnist_model.add(layer4point5);
   mnist_model.add(layer5);
 
-  size_t mini_batch_size {4};
+  size_t mini_batch_size {40};
 
   mnist_model.finalize(mini_batch_size);
 
-  // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  auto tik = std::chrono::high_resolution_clock::now();
+  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
-  // auto tok = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  // std::cout << ms_double.count() << "ms \n";
+  auto tok = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  std::cout << ms_double.count() << "ms \n";
   // mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
   
   mnist_model.test(test_images, test_labels, mini_batch_size);
