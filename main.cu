@@ -856,7 +856,7 @@ __global__ void elementwisemul(Tensor left, Tensor right, Tensor out)
     *out.at(i, j, depthIdx, fourthIdx) = *left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx));
 }
 
-__global__ void elementwisemulwithclipping(Tensor left, Tensor right, Tensor out)
+__global__ void elementwisemulwithclipping(Tensor left, Tensor right, Tensor out, float threshold)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -866,7 +866,7 @@ __global__ void elementwisemulwithclipping(Tensor left, Tensor right, Tensor out
   int fourthIdx = k % left.fourth;
 
   if (i < left.height && j < left.width)
-    *out.at(i, j, depthIdx, fourthIdx) = fminf(fmaxf(*left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx)), -1.0f), 1.0f);
+    *out.at(i, j, depthIdx, fourthIdx) = fminf(fmaxf(*left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx)), -threshold), threshold);
     // *out.at(i, j, depthIdx, fourthIdx) = *left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx));
 }
 
@@ -1112,7 +1112,7 @@ public:
       get_threads(errors.height, units), 
       0, 
       s
-    >>>(errors, pre_activations, errors);
+    >>>(errors, pre_activations, errors, 1.0f);
   }
 
   void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
@@ -1348,10 +1348,10 @@ public:
 
     cudaDeviceSynchronize();
 
-    elementwisemul<<<
+    elementwisemulwithclipping<<<
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
       get_threads(errors.height, errors.width)
-    >>>(errors, pre_activations, errors);
+    >>>(errors, pre_activations, errors, 0.05f);
     cudaDeviceSynchronize();
   }
 
@@ -1373,12 +1373,12 @@ public:
     >>>(pre_activations, pre_activations);
     cudaDeviceSynchronize();
 
-    elementwisemul<<<
+    elementwisemulwithclipping<<<
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
       get_threads(errors.height, errors.width),
       0,
       s
-    >>>(errors, pre_activations, errors);
+    >>>(errors, pre_activations, errors, 0.05f);
     cudaDeviceSynchronize();
   }
 
@@ -1851,27 +1851,27 @@ int main()
   // PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
   // PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", false);
   // PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
-  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", true);
+  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
   PinnedData<int, 10000, 1> test_labels("../input/mnistdata/mnist_test.csv");
-  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
+  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", false);
   PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
 
   // std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
-  auto layer1 = Regular(784, relu, true);
-  // auto layer1 = Convolutional(28, 28);
+  // auto layer1 = Regular(784, relu, true);
+  auto layer1 = Convolutional(28, 28);
   // auto layer1 = Convolutional(5, 5);
   
-  auto layer2 = Regular(128);
+  // auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
-  // auto layer2 = Convolutional(5, {3, 3});
+  auto layer2 = Convolutional(5, {3, 3});
 
-  // auto layer3 = Convolutional(3, {3, 3});
+  auto layer3 = Convolutional(3, {3, 3});
   // auto layer3 = FCfromConv(128);
-  auto layer3 = Regular(128);
+  // auto layer3 = Regular(128);
 
-  auto layer4 = Regular(128);
-  // auto layer4 = FCfromConv(128);
+  // auto layer4 = Regular(128);
+  auto layer4 = FCfromConv(128);
   // auto layer3 = Convolutional(2, {4, 4});
 
   auto layer4point5 = Regular(128);
