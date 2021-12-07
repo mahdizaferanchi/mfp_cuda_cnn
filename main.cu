@@ -1112,7 +1112,7 @@ public:
       get_threads(errors.height, units), 
       0, 
       s
-    >>>(errors, pre_activations, errors, 1.0f);
+    >>>(errors, pre_activations, errors, 10000.0f);
   }
 
   void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
@@ -1351,7 +1351,7 @@ public:
     elementwisemulwithclipping<<<
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
       get_threads(errors.height, errors.width)
-    >>>(errors, pre_activations, errors, 0.05f);
+    >>>(errors, pre_activations, errors, 10000.0f);
     cudaDeviceSynchronize();
   }
 
@@ -1378,7 +1378,7 @@ public:
       get_threads(errors.height, errors.width),
       0,
       s
-    >>>(errors, pre_activations, errors, 0.05f);
+    >>>(errors, pre_activations, errors, 10000.0f);
     cudaDeviceSynchronize();
   }
 
@@ -1851,20 +1851,20 @@ int main()
   // PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
   // PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", false);
   // PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
-  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
+  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", true);
   PinnedData<int, 10000, 1> test_labels("../input/mnistdata/mnist_test.csv");
-  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", false);
+  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
   PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
 
   // std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
-  // auto layer1 = Regular(784, relu, true);
-  auto layer1 = Convolutional(28, 28);
+  auto layer1 = Regular(784, relu, true);
+  // auto layer1 = Convolutional(28, 28);
   // auto layer1 = Convolutional(5, 5);
   
-  // auto layer2 = Regular(128);
+  auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
-  auto layer2 = Convolutional(5, {3, 3});
+  // auto layer2 = Convolutional(5, {3, 3});
 
   auto layer3 = Convolutional(3, {3, 3});
   // auto layer3 = FCfromConv(128);
@@ -1883,8 +1883,8 @@ int main()
   // Model mnist_model(cross_entropy, 2.0f);
   mnist_model.add(layer1);
   mnist_model.add(layer2);
-  mnist_model.add(layer3);
-  mnist_model.add(layer4);
+  // mnist_model.add(layer3);
+  // mnist_model.add(layer4);
   mnist_model.add(layer4point5);
   mnist_model.add(layer5);
 
@@ -1893,7 +1893,7 @@ int main()
   mnist_model.finalize(mini_batch_size);
 
   auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 4, mini_batch_size);
+  mnist_model.train(train_images, train_labels, 10, mini_batch_size);
 
   auto tok = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> ms_double = tok - tik;
