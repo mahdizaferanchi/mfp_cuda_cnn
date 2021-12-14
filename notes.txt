@@ -1,4 +1,27 @@
-make conv layer actually work
+okay since I don't have a pen, I'll have to write my notes here.
+So... since correctness is so important, I think I'll do the following:
 
-conv > conv
-conv > fc
+Check out pytorch and see if it passes all the required criteria.
+criteria:
+    Reading the tensors
+    Writing the tensors
+    "tensors" includes weights, activations, gradients/errors.
+
+weights (and biases): read -> okay, write -> okay
+activations: read -> okay, write -> not needed
+pre_activations: read -> okay, write -> not needed
+errors(gradients): read -> okay (but non-trivial in some cases), write -> not needed
+
+PYTORCH IS APPROVED
+
+
+next step:
+    pytorch has been approved. now I need to:
+        1. make a network to classify mnist with pytorch.
+        2. read all required values (gradient wrt activations might be hard)
+        3. set the initial weights of the network to be the same as my own network.
+        4. iron out any remaining problems so that same behaviour is expected from both
+           my code and pytorch model.
+    (conv layer is not necessary at first and will be added and tested later)
+        
+        
