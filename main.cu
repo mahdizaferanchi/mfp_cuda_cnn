@@ -866,8 +866,8 @@ __global__ void elementwisemulwithclipping(Tensor left, Tensor right, Tensor out
   int fourthIdx = k % left.fourth;
 
   if (i < left.height && j < left.width)
-    *out.at(i, j, depthIdx, fourthIdx) = fminf(fmaxf(*left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx)), -threshold), threshold);
-    // *out.at(i, j, depthIdx, fourthIdx) = *left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx));
+    // *out.at(i, j, depthIdx, fourthIdx) = fminf(fmaxf(*left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx)), -threshold), threshold);
+    *out.at(i, j, depthIdx, fourthIdx) = *left.at(i, j, depthIdx, fourthIdx) * (*right.at(i, j, depthIdx, fourthIdx));
 }
 
 __global__ void relu_derivative(Tensor in, Tensor out)
@@ -1866,38 +1866,39 @@ int main()
   // auto layer2 = FCfromConv(128);
   // auto layer2 = Convolutional(5, {3, 3});
 
-  auto layer3 = Convolutional(3, {3, 3});
+  // auto layer3 = Convolutional(3, {3, 3});
   // auto layer3 = FCfromConv(128);
-  // auto layer3 = Regular(128);
+  auto layer3 = Regular(128);
 
   // auto layer4 = Regular(128);
-  auto layer4 = FCfromConv(128);
+  // auto layer4 = FCfromConv(128);
+  auto layer4 = Regular(10, softmax);
   // auto layer3 = Convolutional(2, {4, 4});
 
-  auto layer4point5 = Regular(128);
+  // auto layer4point5 = Regular(128);
 
-  // auto layer4 = FCfromConv(10, softmax);
-  auto layer5 = Regular(10, softmax);
+  // // auto layer4 = FCfromConv(10, softmax);
+  // auto layer5 = Regular(10, softmax);
 
   Model mnist_model(cross_entropy, 0.05f);
   // Model mnist_model(cross_entropy, 2.0f);
   mnist_model.add(layer1);
   mnist_model.add(layer2);
-  // mnist_model.add(layer3);
+  mnist_model.add(layer3);
+  mnist_model.add(layer4);
   // mnist_model.add(layer4);
-  mnist_model.add(layer4point5);
-  mnist_model.add(layer5);
+  // mnist_model.add(layer5);
 
-  size_t mini_batch_size {40};
+  size_t mini_batch_size {32};
 
   mnist_model.finalize(mini_batch_size);
 
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 10, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 10, mini_batch_size);
 
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
   // mnist_model.single_train(train_images[0], train_labels[0], mini_batch_size);
   
   mnist_model.test(test_images, test_labels, mini_batch_size);
@@ -1925,25 +1926,25 @@ int main()
   layer2.weights.make_file("l2_weights.t");
   layer3.weights.make_file("l3_weights.t");
   layer4.weights.make_file("l4_weights.t");
-  layer5.weights.make_file("l5_weights.t");
+  // layer5.weights.make_file("l5_weights.t");
 
   layer1.errors.make_file("l1_errors.t");
   layer2.errors.make_file("l2_errors.t");
   layer3.errors.make_file("l3_errors.t");
   layer4.errors.make_file("l4_errors.t");
-  layer5.errors.make_file("l5_errors.t");
+  // layer5.errors.make_file("l5_errors.t");
 
   layer1.activations.make_file("l1_activations.t");
   layer2.activations.make_file("l2_activations.t");
   layer3.activations.make_file("l3_activations.t");
   layer4.activations.make_file("l4_activations.t");
-  layer5.activations.make_file("l5_activations.t");
+  // layer5.activations.make_file("l5_activations.t");
 
   layer1.pre_activations.make_file("l1_pre_activations.t");
   layer2.pre_activations.make_file("l2_pre_activations.t");
   layer3.pre_activations.make_file("l3_pre_activations.t");
   layer4.pre_activations.make_file("l4_pre_activations.t");
-  layer5.pre_activations.make_file("l5_pre_activations.t");
+  // layer5.pre_activations.make_file("l5_pre_activations.t");
 
   // layer2.weights.make_file("l2_w_a1e.t");
   // layer3.weights.make_file("l3_w_a1e.t");
