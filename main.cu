@@ -1870,15 +1870,15 @@ int main()
   // auto layer3 = FCfromConv(128);
   auto layer3 = Regular(128);
 
-  // auto layer4 = Regular(128);
+  auto layer4 = Regular(128);
   // auto layer4 = FCfromConv(128);
-  auto layer4 = Regular(10, softmax);
+  // auto layer4 = Regular(10, softmax);
   // auto layer3 = Convolutional(2, {4, 4});
 
-  // auto layer5 = Regular(128);
+  auto layer5 = Regular(128);
 
   // auto layer4 = FCfromConv(10, softmax);
-  // auto layer6 = Regular(10, softmax);
+  auto layer6 = Regular(10, softmax);
 
   Model mnist_model(cross_entropy, 0.05f);
   // Model mnist_model(cross_entropy, 2.0f);
@@ -1886,8 +1886,8 @@ int main()
   mnist_model.add(layer2);
   mnist_model.add(layer3);
   mnist_model.add(layer4);
-  // mnist_model.add(layer5);
-  // mnist_model.add(layer6);
+  mnist_model.add(layer5);
+  mnist_model.add(layer6);
 
   size_t mini_batch_size {2};
 
@@ -1916,12 +1916,12 @@ int main()
   mnist_model.forward_pass(mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.backprop(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.weight_update(false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.weight_update(false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   layer1.weights.make_file("l1_weights.t");
   layer2.weights.make_file("l2_weights.t");
   layer3.weights.make_file("l3_weights.t");
