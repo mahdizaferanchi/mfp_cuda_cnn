@@ -890,6 +890,10 @@
 // 	std::chrono::duration<double, std::milli> ms_double = tok - tik;
 // 	std::cout << ms_double.count() << "ms \n";
 
+  // PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", false);
+  // PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
+  // PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", false);
+  // PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
 // 	mnist_model.test(test_images, test_labels, 32);
 // 	// mnist_model.move_batch(train_images[0], train_labels[0], 1, false);
 // 	// cudaDeviceSynchronize();

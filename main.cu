@@ -912,6 +912,26 @@ __global__ void softmax_kernel(Tensor in, Tensor out)
   }
 }
 
+__global__ void stable_softmax_kernel(Tensor in, Tensor out)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  if (i < in.height && j < in.width)
+  {
+    float sum = 0;
+    float max = *in.at(i, 0);
+    for (int loopIdx = 1; loopIdx < in.width; ++loopIdx)
+    {
+      max = fmaxf(max, *in.at(i, loopIdx));
+    }
+    for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
+    {
+      sum += expf(*in.at(i, loopIdx) - max);
+    }
+    *out.at(i, j) = expf(*in.at(i, j) - max) / sum;
+  }
+}
+
 __global__ void softmax_crossen_error(Tensor in, Tensor out, int* targets)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1026,7 +1046,7 @@ public:
 };
 
 Activation relu(relu_kernel, relu_derivative);
-Activation softmax(softmax_kernel, relu_derivative);
+Activation softmax(stable_softmax_kernel, relu_derivative);
 // activation sigmoid(sigmoid_kernel, sigmoid_derivative);
 
 dim3 get_grids(size_t x_dim, size_t y_dim, size_t z_dim=1)
@@ -1520,7 +1540,7 @@ out_err_fptr get_out_err_func(
 {
   if (out_loss == cross_entropy)
   {
-    if (out_act == softmax_kernel)
+    if (out_act == stable_softmax_kernel)
     {
       return softmax_crossen_error;
     }else{
@@ -1847,10 +1867,6 @@ int main()
   std::srand(static_cast<unsigned int>(std::time(nullptr)));
   std::rand(); 
 
-  // PinnedData<float, 10000, 784> test_images("sample_data/mnist_test.csv", false);
-  // PinnedData<int, 10000, 1> test_labels("sample_data/mnist_test.csv");
-  // PinnedData<float, 20000, 784> train_images("sample_data/mnist_train_small.csv", false);
-  // PinnedData<int, 20000, 1> train_labels("sample_data/mnist_train_small.csv");
   PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", true);
   PinnedData<int, 10000, 1> test_labels("../input/mnistdata/mnist_test.csv");
   PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
@@ -1889,7 +1905,7 @@ int main()
   mnist_model.add(layer5);
   mnist_model.add(layer6);
 
-  size_t mini_batch_size {2};
+  size_t mini_batch_size {4};
 
   mnist_model.finalize(mini_batch_size);
 
@@ -1907,6 +1923,12 @@ int main()
   // {
   //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
   // }
+  layer1.weights.make_file("l1_weights.t");
+  layer2.weights.make_file("l2_weights.t");
+  layer3.weights.make_file("l3_weights.t");
+  layer4.weights.make_file("l4_weights.t");
+  layer5.weights.make_file("l5_weights.t");
+  layer6.weights.make_file("l6_weights.t");
 
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
@@ -1916,48 +1938,40 @@ int main()
   mnist_model.forward_pass(mini_batch_size, false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.backprop(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.weight_update(false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  layer1.weights.make_file("l1_weights.t");
-  layer2.weights.make_file("l2_weights.t");
-  layer3.weights.make_file("l3_weights.t");
-  layer4.weights.make_file("l4_weights.t");
-  // layer5.weights.make_file("l5_weights.t");
+  mnist_model.backprop(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+
+  layer1.weights.make_file("l1_weights_au.t");
+  layer2.weights.make_file("l2_weights_au.t");
+  layer3.weights.make_file("l3_weights_au.t");
+  layer4.weights.make_file("l4_weights_au.t");
+  layer5.weights.make_file("l5_weights_au.t");
+  layer6.weights.make_file("l6_weights_au.t");
 
   layer1.errors.make_file("l1_errors.t");
   layer2.errors.make_file("l2_errors.t");
   layer3.errors.make_file("l3_errors.t");
   layer4.errors.make_file("l4_errors.t");
-  // layer5.errors.make_file("l5_errors.t");
+  layer5.errors.make_file("l5_errors.t");
+  layer6.errors.make_file("l6_errors.t");
 
   layer1.activations.make_file("l1_activations.t");
   layer2.activations.make_file("l2_activations.t");
   layer3.activations.make_file("l3_activations.t");
   layer4.activations.make_file("l4_activations.t");
-  // layer5.activations.make_file("l5_activations.t");
+  layer5.activations.make_file("l5_activations.t");
+  layer6.activations.make_file("l6_activations.t");
 
   layer1.pre_activations.make_file("l1_pre_activations.t");
   layer2.pre_activations.make_file("l2_pre_activations.t");
   layer3.pre_activations.make_file("l3_pre_activations.t");
   layer4.pre_activations.make_file("l4_pre_activations.t");
-  // layer5.pre_activations.make_file("l5_pre_activations.t");
-
-  // layer2.weights.make_file("l2_w_a1e.t");
-  // layer3.weights.make_file("l3_w_a1e.t");
-
-  // layer2.pre_activations.make_file("l2_pre_activations.t");
-  // layer2.errors.make_file("l2_errors.t");
-  // layer3.errors.make_file("l3_e_a1e.t");
-
-  // layer2.activations.make_file("l2_acts_a1e.t");
-  // layer3.activations.make_file("l3_acts_a1e.t");
-
-  // layer2.weight_update_inter.make_file("l2_wi_a1e.t");
-  // layer3.weight_update_inter.make_file("l3_wi_a1e.t");
+  layer5.pre_activations.make_file("l5_pre_activations.t");
+  layer6.pre_activations.make_file("l6_pre_activations.t");
 
   return 0;
 }
