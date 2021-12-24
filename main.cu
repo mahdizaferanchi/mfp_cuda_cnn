@@ -13,6 +13,70 @@
 #include <iomanip>
 
 template <class T, size_t S, size_t item_length>
+class PinnedData2
+{
+public:
+  T* beginning {};
+  T* end;
+  size_t size = S;
+  size_t actual_item_length;
+  PinnedData2(const std::string& file_name, bool bias=false):
+  actual_item_length {item_length + (bias ? 1 : 0)}
+  {
+    cudaMallocHost((void**) &beginning, sizeof(T) * size * actual_item_length, 4);
+    end = beginning;
+    std::ifstream file(file_name);
+    std::string data_point_string;
+    std::getline(file, data_point_string);
+    size_t counter = 0;
+    if (actual_item_length == 1)
+    {
+      while(std::getline(file, data_point_string) && counter < size)
+      {
+        add_label(data_point_string);
+        counter += 1;
+      }
+    }else{
+      while(std::getline(file, data_point_string) && counter < size)
+      {
+        add_image(data_point_string);
+        counter += 1;
+      }
+    }
+  }
+  void add_image(std::string& str)
+  {
+    std::stringstream line(str);
+    std::string num;
+    std::vector<std::string> nums;
+    while(std::getline(line, num, ','))
+    {
+      nums.push_back(num);
+    }
+    for (int i = 0; i < item_length; ++i)
+    {
+      end[i] = static_cast<float> (std::stoi(nums[i + 1])) / 255.0;
+    }
+    if (actual_item_length != item_length) 
+    {
+      end[item_length] = 1.0f;
+    }
+    end += actual_item_length;
+  }
+  void add_label(std::string& str)
+  {
+    std::stringstream line(str);
+    std::string num;
+    std::getline(line, num, ',');
+    end[0] = std::stoi(num);
+    end += 1;
+  }
+  T* operator[](int idx)
+  {
+    return &beginning[idx * actual_item_length];
+  }
+};
+template <class T, size_t S, size_t item_length>
 class PinnedData
 {
 public:
@@ -1770,8 +1834,8 @@ public:
   }
   template <typename T1, typename T2, size_t S, size_t item_length1, size_t item_length2>
   void train(
-    PinnedData<T1, S, item_length1> images,
-    PinnedData<T2, S, item_length2> labels,
+    PinnedData2<T1, S, item_length1> images,
+    PinnedData2<T2, S, item_length2> labels,
     int epochs,
     size_t batch_size)
   {
@@ -1869,8 +1933,10 @@ int main()
 
   PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", true);
   PinnedData<int, 10000, 1> test_labels("../input/mnistdata/mnist_test.csv");
-  PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
-  PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
+  // PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
+  // PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
+  PinnedData2<float, 20000, 784> train_images("../input/mnist-in-csv/mnist_train.csv", true);
+  PinnedData2<int, 20000, 1> train_labels("../input/mnist-in-csv/mnist_train.csv");
 
   // std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
@@ -1909,20 +1975,6 @@ int main()
 
   mnist_model.finalize(mini_batch_size);
 
-  // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 7, mini_batch_size);
-
-  // auto tok = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  // std::cout << ms_double.count() << "ms \n";
-  
-  // mnist_model.test(test_images, test_labels, mini_batch_size);
-  // mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
-  
-  // for (int loopIdx = 0; loopIdx < 400; loopIdx += mini_batch_size)
-  // {
-  //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
-  // }
   layer1.weights.make_file("l1_weights.t");
   layer2.weights.make_file("l2_weights.t");
   layer3.weights.make_file("l3_weights.t");
@@ -1930,18 +1982,33 @@ int main()
   layer5.weights.make_file("l5_weights.t");
   layer6.weights.make_file("l6_weights.t");
 
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.forward_pass(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.backprop(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.weight_update(false);
+  auto tik = std::chrono::high_resolution_clock::now();
+  mnist_model.train(train_images, train_labels, 4, mini_batch_size);
+
+  auto tok = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  std::cout << ms_double.count() << "ms \n";
+  
+  mnist_model.test(test_images, test_labels, mini_batch_size);
+  // mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
+  
+  // for (int loopIdx = 0; loopIdx < 400; loopIdx += mini_batch_size)
+  // {
+  //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
+  // }
+
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.move_batch(train_images[19996], train_labels[19996], mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.forward_pass(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.weight_update(false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 
