@@ -5,6 +5,7 @@
 #include <sstream>
 #include <random>
 #include <ctime>
+#include <cmath>
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -204,10 +205,10 @@ public:
     if (!const_initialization)
     {
       fill_with_rand(h_copy, length, initial);
-      for (int i = 0; i < width; ++i)
-      {
-        h_copy[(height - 1) * width + i] = 0;
-      }
+      // for (int i = 0; i < width; ++i)
+      // {
+      //   h_copy[(height - 1) * width + i] = 0;
+      // }
     }else{
       std::fill_n(h_copy, length, initial);
     }
@@ -1213,7 +1214,7 @@ public:
   {
     input_length = ll.get_output_size() + ll.get_output_bias_size();
     // std::cout << input_length << '\n';
-    weights = Tensor(input_length, units);
+    weights = Tensor(input_length, units, 1, 1, false, std::sqrt(1.0f / static_cast<float>(input_length)));
   }
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
   {
