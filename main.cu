@@ -1346,7 +1346,7 @@ public:
   Convolutional(size_t p_height, size_t p_width, Activation act_p=relu):
   Layer{act_p}, map_dims {p_height, p_width}, filter_quantity {1}
   {
-    biases = CustomMatrix(1, filter_quantity, true, 1.0f);
+    biases = CustomMatrix(1, filter_quantity, true, 0.0f);
     float map_transform_matrix_values[16] {1, 0, -1, 0, 0, 1 , 1, 0, 0, -1, 1, 0, 0, 1, 0, -1};
     B_matrix.write(map_transform_matrix_values);
     float filter_transform_matrix_values[12] {1, 0, 0, 0.5, 0.5, 0.5 , 0.5, -0.5, 0.5, 0, 0, 1};
@@ -1953,8 +1953,8 @@ int main()
   // auto layer3 = FCfromConv(128);
   // auto layer3 = Regular(128);
 
-  auto layer4 = Regular(128);
-  // auto layer4 = FCfromConv(128);
+  // auto layer4 = Regular(128);
+  auto layer4 = FCfromConv(128);
   // auto layer4 = Regular(10, softmax);
   // auto layer3 = Convolutional(2, {4, 4});
 
@@ -1973,7 +1973,7 @@ int main()
   mnist_model.add(layer5);
   // mnist_model.add(layer6);
 
-  size_t mini_batch_size {4};
+  size_t mini_batch_size {40};
 
   mnist_model.finalize(mini_batch_size);
 
