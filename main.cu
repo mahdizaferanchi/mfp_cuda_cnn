@@ -1530,7 +1530,7 @@ public:
   void set_input_props(const Layer& ll)
   {
     // std::cout << "conv set input props called \n";
-    weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity);
+    weights = Tensor(filter_dims[0], filter_dims[1], ll.get_depth(), filter_quantity, false, std::sqrt(1.0f / static_cast<float>(ll.get_depth() * filter_dims[0] * filter_dims[1])));
     weight_update_inter = Tensor(4, 4, weights.depth, weights.fourth, true, 0);
     size_t tile_dim = weights.height + 2 - 1;
     transformed_weights = Tensor(tile_dim, tile_dim, ll.get_depth(), filter_quantity);
@@ -1932,36 +1932,37 @@ int main()
   std::srand(static_cast<unsigned int>(std::time(nullptr)));
   std::rand(); 
 
-  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", true);
+  PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
   PinnedData<int, 10000, 1> test_labels("../input/mnistdata/mnist_test.csv");
-  // PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", true);
+  // PinnedData<float, 20000, 784> train_images("../input/mnistdata/mnist_train_small.csv", false);
   // PinnedData<int, 20000, 1> train_labels("../input/mnistdata/mnist_train_small.csv");
-  PinnedData2<float, 20000, 784> train_images("../input/mnist-in-csv/mnist_train.csv", true);
+  PinnedData2<float, 20000, 784> train_images("../input/mnist-in-csv/mnist_train.csv", false);
   PinnedData2<int, 20000, 1> train_labels("../input/mnist-in-csv/mnist_train.csv");
 
   // std::cout << "config: layer1:C28*28, layer2:C5filters3*3, layer3:R128, layer4:R10Softmax, lr=0.05, commit_hash:ea1472, env:kaggle-MFP, GPU:Tesla P100-PCIE-16GB" << '\n';
 
-  auto layer1 = Regular(784, relu, true);
-  // auto layer1 = Convolutional(28, 28);
+  // auto layer1 = Regular(784, relu, true);
+  auto layer1 = Convolutional(28, 28);
   // auto layer1 = Convolutional(5, 5);
   
-  auto layer2 = Regular(128);
+  // auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
-  // auto layer2 = Convolutional(5, {3, 3});
+  auto layer2 = Convolutional(5, {3, 3});
 
-  // auto layer3 = Convolutional(3, {3, 3});
+  auto layer3 = Convolutional(3, {3, 3});
   // auto layer3 = FCfromConv(128);
-  auto layer3 = Regular(128);
+  // auto layer3 = Regular(128);
 
   auto layer4 = Regular(128);
   // auto layer4 = FCfromConv(128);
   // auto layer4 = Regular(10, softmax);
   // auto layer3 = Convolutional(2, {4, 4});
 
-  auto layer5 = Regular(128);
+  // auto layer5 = Regular(128);
+  auto layer5 = Regular(10, softmax);
 
   // auto layer4 = FCfromConv(10, softmax);
-  auto layer6 = Regular(10, softmax);
+  // auto layer6 = Regular(10, softmax);
 
   Model mnist_model(cross_entropy, 0.05f);
   // Model mnist_model(cross_entropy, 2.0f);
@@ -1970,7 +1971,7 @@ int main()
   mnist_model.add(layer3);
   mnist_model.add(layer4);
   mnist_model.add(layer5);
-  mnist_model.add(layer6);
+  // mnist_model.add(layer6);
 
   size_t mini_batch_size {4};
 
@@ -1981,7 +1982,7 @@ int main()
   layer3.weights.make_file("l3_weights.t");
   layer4.weights.make_file("l4_weights.t");
   layer5.weights.make_file("l5_weights.t");
-  layer6.weights.make_file("l6_weights.t");
+  // layer6.weights.make_file("l6_weights.t");
 
   auto tik = std::chrono::high_resolution_clock::now();
   mnist_model.train(train_images, train_labels, 4, mini_batch_size);
@@ -2018,28 +2019,28 @@ int main()
   layer3.weights.make_file("l3_weights_au.t");
   layer4.weights.make_file("l4_weights_au.t");
   layer5.weights.make_file("l5_weights_au.t");
-  layer6.weights.make_file("l6_weights_au.t");
+  // layer6.weights.make_file("l6_weights_au.t");
 
   layer1.errors.make_file("l1_errors.t");
   layer2.errors.make_file("l2_errors.t");
   layer3.errors.make_file("l3_errors.t");
   layer4.errors.make_file("l4_errors.t");
   layer5.errors.make_file("l5_errors.t");
-  layer6.errors.make_file("l6_errors.t");
+  // layer6.errors.make_file("l6_errors.t");
 
   layer1.activations.make_file("l1_activations.t");
   layer2.activations.make_file("l2_activations.t");
   layer3.activations.make_file("l3_activations.t");
   layer4.activations.make_file("l4_activations.t");
   layer5.activations.make_file("l5_activations.t");
-  layer6.activations.make_file("l6_activations.t");
+  // layer6.activations.make_file("l6_activations.t");
 
   layer1.pre_activations.make_file("l1_pre_activations.t");
   layer2.pre_activations.make_file("l2_pre_activations.t");
   layer3.pre_activations.make_file("l3_pre_activations.t");
   layer4.pre_activations.make_file("l4_pre_activations.t");
   layer5.pre_activations.make_file("l5_pre_activations.t");
-  layer6.pre_activations.make_file("l6_pre_activations.t");
+  // layer6.pre_activations.make_file("l6_pre_activations.t");
 
   return 0;
 }
