@@ -13,6 +13,28 @@
 #include <functional>
 #include <iomanip>
 
+#ifdef WIN32
+#include <windows.h>
+#elif _POSIX_C_SOURCE >= 199309L
+#include <time.h>   // for nanosleep
+#else
+#include <unistd.h> // for usleep
+#endif
+
+void sleep_ms(int milliseconds){ // cross-platform sleep function
+#ifdef WIN32
+    Sleep(milliseconds);
+#elif _POSIX_C_SOURCE >= 199309L
+    struct timespec ts;
+    ts.tv_sec = milliseconds / 1000;
+    ts.tv_nsec = (milliseconds % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+#else
+    if (milliseconds >= 1000)
+      sleep(milliseconds / 1000);
+    usleep((milliseconds % 1000) * 1000);
+#endif
+}
 template <class T, size_t S, size_t item_length>
 class PinnedData2
 {
@@ -1399,7 +1421,8 @@ public:
 
   void backward_conv(Tensor& nlw, Tensor& nle, cudaStream_t s)
   {
-    nle.make_file("l3_errs.t");
+    // nle.make_file("l3_errs.t");
+    // sleep_ms(2);
     flipped_filter_transform<<<
       1, 
       dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth * transformed_flipped_weights.fourth)
@@ -1469,6 +1492,7 @@ public:
 
   void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) // convback
   {
+    cudaDeviceSynchronize();
     bool is_next_layer_fcfc = (nle.fourth == 1);
     if (is_next_layer_fcfc)
     {
@@ -1973,7 +1997,7 @@ int main()
   mnist_model.add(layer5);
   // mnist_model.add(layer6);
 
-  size_t mini_batch_size {40};
+  size_t mini_batch_size {4};
 
   mnist_model.finalize(mini_batch_size);
 
