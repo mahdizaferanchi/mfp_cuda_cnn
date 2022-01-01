@@ -558,7 +558,8 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
       result = 0;
       for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
       {
-        result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+        // result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+        result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx - 1, xIdx + hIdx - 1, k % in.depth, k / in.depth));
       }
       intermediate[vIdx][hIdx] = result;
     }
@@ -601,6 +602,7 @@ __global__ void map_transform_for_backprop(Tensor in, Tensor t_mat, Tensor out)
       for (int loopIdx = 0; loopIdx < 2; ++loopIdx)
       {
         result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
+        // result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx - 1, xIdx + hIdx - 1, k % in.depth, k / in.depth));
       }
       // *inter.at((2 * yIdx + vIdx), (2 * xIdx + hIdx), (k % in.depth), (k / in.depth)) = result;
       intermediate[vIdx][hIdx] = result;
@@ -2008,14 +2010,14 @@ int main()
   layer5.weights.make_file("l5_weights.t");
   // layer6.weights.make_file("l6_weights.t");
 
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 4, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 4, mini_batch_size);
 
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
   
-  mnist_model.test(test_images, test_labels, mini_batch_size);
+  // mnist_model.test(test_images, test_labels, mini_batch_size);
   // mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
   
   // for (int loopIdx = 0; loopIdx < 400; loopIdx += mini_batch_size)
@@ -2023,18 +2025,18 @@ int main()
   //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
   // }
 
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.move_batch(train_images[19996], train_labels[19996], mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.forward_pass(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.backprop(mini_batch_size, false);
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  // mnist_model.weight_update(false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.forward_pass(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.backprop(mini_batch_size, false);
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  mnist_model.weight_update(false);
   cudaDeviceSynchronize();
   std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 
@@ -2065,6 +2067,20 @@ int main()
   layer4.pre_activations.make_file("l4_pre_activations.t");
   layer5.pre_activations.make_file("l5_pre_activations.t");
   // layer6.pre_activations.make_file("l6_pre_activations.t");
+
+  return 0;
+}
+
+int main2()
+{
+  Tensor test_tensor {3, 3, 2, 4};
+  float test_arr[3 * 3* 2 * 4] {};
+  for (int i = 0; i < 72; ++i)
+  {
+    test_arr[i] = static_cast<float> (i);
+  }
+  test_tensor.write(test_arr);
+  test_tensor.make_file("test_tensor.t");
 
   return 0;
 }
