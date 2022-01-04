@@ -482,7 +482,8 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-  __shared__ float intermediate[4][3][3][3]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
+  // __shared__ float intermediate[4][3][3][3]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
+  __shared__ float intermediate[4][3][5][5]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
 
   if (i < t_mat.height && j < in.width)
   {
@@ -1955,8 +1956,8 @@ int main()
 {
   testCuda();
 
-  std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
-  // std::srand(static_cast<unsigned int>(std::time(nullptr)));
+  // std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
+  std::srand(static_cast<unsigned int>(std::time(nullptr)));
   std::rand(); 
 
   PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
@@ -1974,7 +1975,7 @@ int main()
   
   // auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
-  auto layer2 = Convolutional(3, {3, 3});
+  auto layer2 = Convolutional(5, {3, 3});
 
   auto layer3 = Convolutional(3, {3, 3});
   // auto layer3 = FCfromConv(128);
@@ -2000,7 +2001,7 @@ int main()
   mnist_model.add(layer5);
   // mnist_model.add(layer6);
 
-  size_t mini_batch_size {4};
+  size_t mini_batch_size {40};
 
   mnist_model.finalize(mini_batch_size);
 
