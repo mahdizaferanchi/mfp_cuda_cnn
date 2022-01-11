@@ -483,7 +483,8 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
   // __shared__ float intermediate[4][3][3][3]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
-  __shared__ float intermediate[4][3][5][5]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
+  // __shared__ float intermediate[4][3][5][5]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
+  __shared__ float intermediate[4][3][5]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
 
   if (i < t_mat.height && j < in.width)
   {
@@ -493,7 +494,8 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
       result += *t_mat.at(i, loopIdx) * (*in.at(loopIdx, j, k % in.depth, k / in.depth));
     }
     // *out.at(i, j, k % in.depth, k / in.depth) = result;
-    intermediate[i][j][k % in.depth][k / in.depth] = result;
+    // intermediate[i][j][k % in.depth][k / in.depth] = result;
+    intermediate[i][j][k % in.depth] = result;
   }
 
   if (i < t_mat.height && j < t_mat.height)
@@ -501,7 +503,8 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
     float result = 0.0f;
     for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
     {
-      result += intermediate[i][loopIdx][k % in.depth][k / in.depth] * (*t_mat.at(j, loopIdx));
+      // result += intermediate[i][loopIdx][k % in.depth][k / in.depth] * (*t_mat.at(j, loopIdx));
+      result += intermediate[i][loopIdx][k % in.depth] * (*t_mat.at(j, loopIdx));
     }
     *out.at(i, j, k % in.depth, k / in.depth) = result;
   }
@@ -1397,8 +1400,8 @@ public:
     cudaDeviceSynchronize();
 
     filter_transform<<<
-      1, 
-      dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth * transformed_weights.fourth)
+      dim3(1, 1, transformed_weights.fourth), 
+      dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth)
     >>>(weights, G_matrix, transformed_weights);
     cudaDeviceSynchronize();
 
@@ -1956,8 +1959,8 @@ int main()
 {
   testCuda();
 
-  // std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
-  std::srand(static_cast<unsigned int>(std::time(nullptr)));
+  std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
+  // std::srand(static_cast<unsigned int>(std::time(nullptr)));
   std::rand(); 
 
   PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
@@ -2048,6 +2051,9 @@ int main()
   layer4.weights.make_file("l4_weights_au.t");
   layer5.weights.make_file("l5_weights_au.t");
   // layer6.weights.make_file("l6_weights_au.t");
+
+  layer2.transformed_weights.make_file("l2_transformed_weights.t");
+  layer3.transformed_weights.make_file("l3_transformed_weights.t");
 
   layer1.errors.make_file("l1_errors.t");
   layer2.errors.make_file("l2_errors.t");
