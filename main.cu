@@ -484,7 +484,7 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
 
   // __shared__ float intermediate[4][3][3][3]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
   // __shared__ float intermediate[4][3][5][5]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
-  __shared__ float intermediate[4][3][5]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
+  __shared__ float intermediate[4][3][64]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
 
   if (i < t_mat.height && j < in.width)
   {
@@ -516,7 +516,8 @@ __global__ void flipped_filter_transform(Tensor in, Tensor t_mat, Tensor out)
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-  __shared__ float intermediate[4][3][10][10]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
+  // __shared__ float intermediate[4][3][64][10]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
+  __shared__ float intermediate[4][3][64]; //probably should be parametrized in the future (can't just put in.*** here though so ...)
 
   if (i < t_mat.height && j < in.width)
   {
@@ -526,7 +527,8 @@ __global__ void flipped_filter_transform(Tensor in, Tensor t_mat, Tensor out)
       result += *t_mat.at(i, loopIdx) * (*in.at_flipped(loopIdx, j, k % in.depth, k / in.depth));
     }
     // *out.at(i, j, k % in.depth, k / in.depth) = result;
-    intermediate[i][j][k % in.depth][k / in.depth] = result;
+    // intermediate[i][j][k % in.depth][k / in.depth] = result;
+    intermediate[i][j][k % in.depth] = result;
   }
 
   if (i < t_mat.height && j < t_mat.height)
@@ -534,7 +536,8 @@ __global__ void flipped_filter_transform(Tensor in, Tensor t_mat, Tensor out)
     float result = 0.0f;
     for (int loopIdx = 0; loopIdx < in.width; ++loopIdx)
     {
-      result += intermediate[i][loopIdx][k % in.depth][k / in.depth] * (*t_mat.at(j, loopIdx));
+      // result += intermediate[i][loopIdx][k % in.depth][k / in.depth] * (*t_mat.at(j, loopIdx));
+      result += intermediate[i][loopIdx][k % in.depth] * (*t_mat.at(j, loopIdx));
     }
     *out.at(i, j, k % in.depth, k / in.depth) = result;
   }
@@ -1316,6 +1319,7 @@ public:
       0, 
       stream
     >>>(errors, use_alt ? (ll_iterator)->get().activations_alt : (ll_iterator)->get().activations, weights, learning_rate);
+    cudaDeviceSynchronize();
   }
 
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -1402,6 +1406,7 @@ public:
     filter_transform<<<
       dim3(1, 1, transformed_weights.fourth), 
       dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth)
+      // 4 * 3 * transformed_weights.depth * sizeof(float)
     >>>(weights, G_matrix, transformed_weights);
     cudaDeviceSynchronize();
 
@@ -1431,8 +1436,11 @@ public:
     // nle.make_file("l3_errs.t");
     // sleep_ms(2);
     flipped_filter_transform<<<
-      1, 
-      dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth * transformed_flipped_weights.fourth)
+      // 1, 
+      // dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth * transformed_flipped_weights.fourth)
+      dim3(1, 1, transformed_flipped_weights.fourth), 
+      dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth)
+      // 4 * 3 * transformed_flipped_weights.depth * sizeof(float)
     >>>(nlw, G_matrix, transformed_flipped_weights);
     cudaDeviceSynchronize();
 
@@ -1533,7 +1541,8 @@ public:
 
     // mul in wts with R * S results
     wts_ll_acts_mul_errs<<<
-      dim3(1, 1, ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth),
+      // dim3(1, 1, ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth),
+      dim3(ll_transformed_acts.fourth, transformed_errors.depth, ll_transformed_acts.depth),
       dim3(ll_transformed_acts.height / 4, ll_transformed_acts.width / 4),
       0,
       s
@@ -1978,9 +1987,9 @@ int main()
   
   // auto layer2 = Regular(128);
   // auto layer2 = FCfromConv(128);
-  auto layer2 = Convolutional(5, {3, 3});
+  auto layer2 = Convolutional(64, {3, 3});
 
-  auto layer3 = Convolutional(3, {3, 3});
+  auto layer3 = Convolutional(64, {3, 3});
   // auto layer3 = FCfromConv(128);
   // auto layer3 = Regular(128);
 
