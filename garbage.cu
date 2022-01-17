@@ -181,6 +181,14 @@ std::cout << trans_filter << '\n';
 // std::cout << mnist_model.layers[1].get().weights << '\n';
 // std::cout << mnist_model.layers[0].get().activations << '\n';
 
+    // dim3 myconf = get_grids_2(ll_transformed_acts.height / 4,
+    //     ll_transformed_acts.width / 4,
+    //     ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth);
+    // dim3 myconf2 = get_threads(ll_transformed_acts.height / 4,
+    //     ll_transformed_acts.width / 4,
+    //     ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth);
+    // std::cout << myconf.x << ' ' << myconf.y << ' '<< myconf.z << '\n';
+    // std::cout << myconf2.x << ' ' << myconf2.y << ' '<< myconf2.z << '\n';
 // cudaDeviceProp props;
 // cudaGetDeviceProperties(&props, 0);
 // std::cout << props.sharedMemPerBlock << '\n';

@@ -863,24 +863,27 @@ __global__ void wts_ll_acts_mul_errs(Tensor map, Tensor filter, Tensor out)
   int batchIdx = (k / filter.depth) % map.fourth;
   int filterIdx = k % (filter.depth);
 
-  for (int vIdx = 0; vIdx < 4; ++vIdx)
+  if (i < map.height && j < map.width && k < map.fourth * filter.depth * map.depth)
   {
-    for (int hIdx = 0; hIdx < 4; ++hIdx)
+    for (int vIdx = 0; vIdx < 4; ++vIdx)
     {
-      atomicAdd(
-        out.at(vIdx, hIdx, mapIdx, filterIdx),
-        *map.at(yIdx + vIdx, xIdx + hIdx, mapIdx, batchIdx) * (*filter.at(yIdx + vIdx, xIdx + hIdx, filterIdx, batchIdx))
-      );
-      // atomicAdd(
-      //   out.at(vIdx, hIdx, 0, 0),
-      //   *map.at(yIdx + vIdx, xIdx + hIdx, 0, 0) * (*filter.at(yIdx + vIdx, xIdx + hIdx, 0, 0))
-      // );
-      // atomicAdd(
-      //   out.at(vIdx, hIdx, mapIdx, filterIdx),
-      //   4
-      // );
-      // if (filterIdx > *out.at(vIdx, hIdx, mapIdx, filterIdx))
-        // *out.at(vIdx, hIdx, mapIdx, filterIdx) = k;
+      for (int hIdx = 0; hIdx < 4; ++hIdx)
+      {
+        atomicAdd(
+          out.at(vIdx, hIdx, mapIdx, filterIdx),
+          *map.at(yIdx + vIdx, xIdx + hIdx, mapIdx, batchIdx) * (*filter.at(yIdx + vIdx, xIdx + hIdx, filterIdx, batchIdx))
+        );
+        // atomicAdd(
+        //   out.at(vIdx, hIdx, 0, 0),
+        //   *map.at(yIdx + vIdx, xIdx + hIdx, 0, 0) * (*filter.at(yIdx + vIdx, xIdx + hIdx, 0, 0))
+        // );
+        // atomicAdd(
+        //   out.at(vIdx, hIdx, mapIdx, filterIdx),
+        //   4
+        // );
+        // if (filterIdx > *out.at(vIdx, hIdx, mapIdx, filterIdx))
+          // *out.at(vIdx, hIdx, mapIdx, filterIdx) = k;
+      }
     }
   }
 }
@@ -1151,12 +1154,26 @@ dim3 get_grids(size_t x_dim, size_t y_dim, size_t z_dim=1)
   return dim3((x_dim > 40) ? x_dim / 20 + 1 : 2, (y_dim > 40) ? y_dim / 20 + 1 : 2, z_dim);
 }
 
+dim3 get_grids_2(size_t x_dim, size_t y_dim, size_t z_dim=1)
+{
+  return dim3((x_dim > 40) ? x_dim / 20 + 1 : 4, (y_dim > 40) ? y_dim / 20 + 1 : 4, (z_dim > 40) ? z_dim / 20 + 1 : 2);
+}
 
-dim3 get_threads(size_t x_dim, size_t y_dim)
+
+dim3 get_threads(size_t x_dim, size_t y_dim, size_t z_dim=1)
 {
   return dim3(
     x_dim / ((x_dim > 40) ? x_dim / 20 + 1 : 2) + 1, 
-    y_dim / ((y_dim > 40) ? y_dim / 20 + 1 : 2) + 1);
+    y_dim / ((y_dim > 40) ? y_dim / 20 + 1 : 2) + 1,
+    z_dim / ((z_dim > 40) ? z_dim / 20 + 1 : 2) + 1);
+}
+
+dim3 get_threads_2(size_t x_dim, size_t y_dim, size_t z_dim=1)
+{
+  return dim3(
+    x_dim / ((x_dim > 40) ? x_dim / 20 + 1 : 4) + 1, 
+    y_dim / ((y_dim > 40) ? y_dim / 20 + 1 : 4) + 1,
+    z_dim / ((z_dim > 40) ? z_dim / 20 + 1 : 2) + 1);
 }
 
 class Layer
@@ -1542,8 +1559,14 @@ public:
     // mul in wts with R * S results
     wts_ll_acts_mul_errs<<<
       // dim3(1, 1, ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth),
-      dim3(ll_transformed_acts.fourth, transformed_errors.depth, ll_transformed_acts.depth),
-      dim3(ll_transformed_acts.height / 4, ll_transformed_acts.width / 4),
+      // dim3(ll_transformed_acts.fourth, transformed_errors.depth, ll_transformed_acts.depth),
+      // dim3(ll_transformed_acts.height / 4, ll_transformed_acts.width / 4),
+      get_grids_2(ll_transformed_acts.height / 4,
+        ll_transformed_acts.width / 4,
+        ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth),
+      get_threads_2(ll_transformed_acts.height / 4,
+        ll_transformed_acts.width / 4,
+        ll_transformed_acts.fourth * transformed_errors.depth * ll_transformed_acts.depth),
       0,
       s
     >>>(ll_transformed_acts, transformed_errors, weight_update_inter);
@@ -2024,14 +2047,14 @@ int main()
   layer5.weights.make_file("l5_weights.t");
   // layer6.weights.make_file("l6_weights.t");
 
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 4, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 4, mini_batch_size);
 
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
   
-  mnist_model.test(test_images, test_labels, mini_batch_size);
+  // mnist_model.test(test_images, test_labels, mini_batch_size);
   // mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
   
   // for (int loopIdx = 0; loopIdx < 400; loopIdx += mini_batch_size)
