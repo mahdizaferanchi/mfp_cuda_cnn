@@ -1228,7 +1228,7 @@ public:
       0, 
       s
     >>>(pre_activations, activations);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
     // std::cout << activations << '\n';
   }
   void backward(Tensor& nlw, Tensor& nle, cudaStream_t s)
@@ -1340,7 +1340,7 @@ public:
       0, 
       stream
     >>>(errors, use_alt ? (ll_iterator)->get().activations_alt : (ll_iterator)->get().activations, weights, learning_rate);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
   }
 
   void initialize_with_batch_size(size_t batch_size, const Layer& ll)
@@ -1419,37 +1419,47 @@ public:
 
     map_transform<<<
       dim3(1, 1, input.depth * input.fourth),
-      dim3(input.height / 2, input.width / 2)
+      dim3(input.height / 2, input.width / 2),
+      0,
+      s
     >>>(input, B_matrix, transformed_input);
 
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     filter_transform<<<
       dim3(1, 1, transformed_weights.fourth), 
-      dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth)
+      dim3(transformed_weights.height, transformed_weights.width, transformed_weights.depth),
       // 4 * 3 * transformed_weights.depth * sizeof(float)
+      0,
+      s
     >>>(weights, G_matrix, transformed_weights);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     wts_input_mul_filter<<<
       dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
-      dim3(transformed_input.height / 4, transformed_input.width / 4)
+      dim3(transformed_input.height / 4, transformed_input.width / 4),
+      0,
+      s
     >>>(transformed_input, transformed_weights, forward_inter);
     // wts = winograd transform space
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     inverse_transform_with_bias<<<
       dim3(1, 1, forward_inter.depth * forward_inter.fourth),
-      dim3(forward_inter.height / 4, forward_inter.width / 4)
+      dim3(forward_inter.height / 4, forward_inter.width / 4),
+      0,
+      s
     >>>(forward_inter, A_matrix, biases, pre_activations);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     conv_relu_kernel<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
-      dim3((pre_activations.height + 1) / 2, (pre_activations.width + 1) / 2)
+      dim3((pre_activations.height + 1) / 2, (pre_activations.width + 1) / 2),
+      0,
+      s
     >>>(pre_activations, activations);
 
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
   }
 
   void backward_conv(Tensor& nlw, Tensor& nle, cudaStream_t s)
@@ -1460,43 +1470,55 @@ public:
       // 1, 
       // dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth * transformed_flipped_weights.fourth)
       dim3(1, 1, transformed_flipped_weights.fourth), 
-      dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth)
+      dim3(transformed_flipped_weights.height, transformed_flipped_weights.width, transformed_flipped_weights.depth),
       // 4 * 3 * transformed_flipped_weights.depth * sizeof(float)
+      0,
+      s
     >>>(nlw, G_matrix, transformed_flipped_weights);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     map_transform<<<
       dim3(1, 1, nle.depth * nle.fourth),
-      dim3(nle.height / 2, nle.width / 2)
+      dim3(nle.height / 2, nle.width / 2),
+      0,
+      s
     >>>(nle, B_matrix, transfromed_nle);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     wts_nle_mul_nlw<<<
       dim3(1, 1, transfromed_nle.fourth * transformed_flipped_weights.depth),
-      dim3(transfromed_nle.height / 4, transfromed_nle.width / 4)
+      dim3(transfromed_nle.height / 4, transfromed_nle.width / 4),
+      0,
+      s
     >>>(transfromed_nle, transformed_flipped_weights, backward_conv_inter);
 
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
     
     inverse_transform<<<
       dim3(1, 1, backward_conv_inter.depth * backward_conv_inter.fourth),
-      dim3(backward_conv_inter.height / 4, backward_conv_inter.width / 4)
+      dim3(backward_conv_inter.height / 4, backward_conv_inter.width / 4),
+      0,
+      s
     >>>(backward_conv_inter, A_matrix, errors);
 
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     conv_relu_derivative<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
-      dim3(pre_activations.height / 2, pre_activations.width / 2)
+      dim3(pre_activations.height / 2, pre_activations.width / 2),
+      0,
+      s
     >>>(pre_activations, pre_activations);
 
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     elementwisemulwithclipping<<<
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
-      get_threads(errors.height, errors.width)
+      get_threads(errors.height, errors.width),
+      0,
+      s
     >>>(errors, pre_activations, errors, 10000.0f);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
   }
 
   void backward_fc(Tensor& nlw, Tensor& nle, cudaStream_t s)
@@ -1507,7 +1529,7 @@ public:
       0,
       s
     >>>(nle, nlw, errors);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     conv_relu_derivative<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
@@ -1515,7 +1537,7 @@ public:
       0,
       s
     >>>(pre_activations, pre_activations);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     elementwisemulwithclipping<<<
       get_grids(errors.height, errors.width, errors.depth * errors.fourth),
@@ -1523,12 +1545,12 @@ public:
       0,
       s
     >>>(errors, pre_activations, errors, 10000.0f);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
   }
 
   void backward(Tensor& nlw, Tensor& nle, cudaStream_t s) // convback
   {
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
     bool is_next_layer_fcfc = (nle.fourth == 1);
     if (is_next_layer_fcfc)
     {
@@ -1549,7 +1571,7 @@ public:
       0,
       s
     >>>(ll_acts, B2_matrix, ll_transformed_acts);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     // transform errors
     map_transform_for_backprop<<<
@@ -1558,7 +1580,7 @@ public:
       0,
       s
     >>>(errors, G2_matrix, transformed_errors);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     // mul in wts with R * S results
     wts_ll_acts_mul_errs<<<
@@ -1574,7 +1596,7 @@ public:
       0,
       s
     >>>(ll_transformed_acts, transformed_errors, weight_update_inter);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     // inverse transform
     inverse_transform_for_weights<<<
@@ -1583,7 +1605,7 @@ public:
       0,
       s
     >>>(weight_update_inter, A2_matrix, learning_rate / (float)ll_transformed_acts.fourth, weights);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     set_weight_inter_to_zero<<<
       dim3(1, 1, weight_update_inter.depth * weight_update_inter.fourth),
@@ -1591,7 +1613,7 @@ public:
       0,
       s
     >>>(weight_update_inter);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
   }
 
   void set_input_props(const Layer& ll)
@@ -1839,8 +1861,10 @@ public:
     cudaDeviceSynchronize();
     auto t1 = std::chrono::high_resolution_clock::now();
     forward_pass(batch_size, false);
+    cudaDeviceSynchronize();
     auto t2 = std::chrono::high_resolution_clock::now();
     backprop(batch_size, false);
+    cudaDeviceSynchronize();
     auto t3 = std::chrono::high_resolution_clock::now();
     weight_update(false);
     cudaDeviceSynchronize();
@@ -1848,11 +1872,11 @@ public:
     std::chrono::nanoseconds move_time = t1 - t0;
     std::chrono::nanoseconds forward_time = t2 - t1;
     std::chrono::nanoseconds back_time = t3 - t2;
-    std::chrono::nanoseconds update_time = t4 - t1;
-    std::cout << move_time.count() << "ns \n";
-    std::cout << forward_time.count() << "ns \n";
-    std::cout << back_time.count() << "ns \n";
-    std::cout << update_time.count() << "ns \n";
+    std::chrono::nanoseconds update_time = t4 - t3;
+    std::cout << move_time.count() << " ns \n";
+    std::cout << forward_time.count() << " ns \n";
+    std::cout << back_time.count() << " ns \n";
+    std::cout << update_time.count() << " ns \n";
   }
   void single_train(float* image, int* label, size_t batch_size)
   {
@@ -1913,11 +1937,11 @@ public:
       {
         bool use_alt {false};
         reset_correct_predictions();
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
         int num_of_data = images.size;
         auto tik = std::chrono::high_resolution_clock::now();
         move_batch(images[0], labels[0], batch_size, use_alt);
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
         for (int loopIdx = batch_size; loopIdx < num_of_data; loopIdx += batch_size)
         {
           move_batch(
@@ -1925,13 +1949,13 @@ public:
             labels[loopIdx], 
             batch_size, 
             !use_alt);
-          cudaDeviceSynchronize();
+          // cudaDeviceSynchronize();
           forward_pass(batch_size, use_alt);
-          cudaDeviceSynchronize();
+          // cudaDeviceSynchronize();
           backprop(batch_size, use_alt);
-          cudaDeviceSynchronize();
+          // cudaDeviceSynchronize();
           weight_update(use_alt);
-          cudaDeviceSynchronize();
+          // cudaDeviceSynchronize();
           // if (loopIdx % 20 == 0 && loopIdx < 200) 
           // {
           //   layers[4].get().weights.make_file(string_format("l5_w_%d", loopIdx));
@@ -2051,14 +2075,15 @@ int main()
   layer5.weights.make_file("l5_weights.t");
   // layer6.weights.make_file("l6_weights.t");
 
-  auto tik = std::chrono::high_resolution_clock::now();
-  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
+  // auto tik = std::chrono::high_resolution_clock::now();
+  // mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
-  auto tok = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  std::cout << ms_double.count() << "ms \n";
+  // auto tok = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  // std::cout << ms_double.count() << "ms \n";
   
-  mnist_model.test(test_images, test_labels, mini_batch_size);
+  // mnist_model.test(test_images, test_labels, mini_batch_size);
+  mnist_model.single_train_timed(train_images[0], train_labels[0], mini_batch_size);
   // mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
   
   // for (int loopIdx = 0; loopIdx < 400; loopIdx += mini_batch_size)
@@ -2066,20 +2091,20 @@ int main()
   //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
   // }
 
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.forward_pass(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.backprop(mini_batch_size, false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
-  mnist_model.weight_update(false);
-  cudaDeviceSynchronize();
-  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.forward_pass(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.backprop(mini_batch_size, false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  // mnist_model.weight_update(false);
+  // cudaDeviceSynchronize();
+  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
 
   layer1.weights.make_file("l1_weights_au.t");
   layer2.weights.make_file("l2_weights_au.t");
