@@ -498,6 +498,8 @@ __global__ void filter_transform(Tensor in, Tensor t_mat, Tensor out)
     intermediate[i][j][k % in.depth] = result;
   }
 
+  __syncthreads();
+
   if (i < t_mat.height && j < t_mat.height)
   {
     float result = 0.0f;
@@ -530,6 +532,8 @@ __global__ void flipped_filter_transform(Tensor in, Tensor t_mat, Tensor out)
     // intermediate[i][j][k % in.depth][k / in.depth] = result;
     intermediate[i][j][k % in.depth] = result;
   }
+  
+  __syncthreads();
 
   if (i < t_mat.height && j < t_mat.height)
   {
@@ -1991,8 +1995,8 @@ int main()
 {
   testCuda();
 
-  std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
-  // std::srand(static_cast<unsigned int>(std::time(nullptr)));
+  // std::srand(0);//static_cast<unsigned int>(std::time(nullptr))
+  std::srand(static_cast<unsigned int>(std::time(nullptr)));
   std::rand(); 
 
   PinnedData<float, 10000, 784> test_images("../input/mnistdata/mnist_test.csv", false);
@@ -2047,14 +2051,14 @@ int main()
   layer5.weights.make_file("l5_weights.t");
   // layer6.weights.make_file("l6_weights.t");
 
-  // auto tik = std::chrono::high_resolution_clock::now();
-  // mnist_model.train(train_images, train_labels, 4, mini_batch_size);
+  auto tik = std::chrono::high_resolution_clock::now();
+  mnist_model.train(train_images, train_labels, 1, mini_batch_size);
 
-  // auto tok = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double, std::milli> ms_double = tok - tik;
-  // std::cout << ms_double.count() << "ms \n";
+  auto tok = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> ms_double = tok - tik;
+  std::cout << ms_double.count() << "ms \n";
   
-  // mnist_model.test(test_images, test_labels, mini_batch_size);
+  mnist_model.test(test_images, test_labels, mini_batch_size);
   // mnist_model.single_test(test_images[0], test_labels[0], mini_batch_size);
   
   // for (int loopIdx = 0; loopIdx < 400; loopIdx += mini_batch_size)
