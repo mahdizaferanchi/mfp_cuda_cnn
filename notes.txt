@@ -24,4 +24,112 @@ next step:
            my code and pytorch model.
     (conv layer is not necessary at first and will be added and tested later)
         
-        
+forward start: 
+818314 ns 
+14005724 ns 
+35293001 ns 
+60798 ns 
+label update 18601 ns 
+forward end: 
+backward start: 
+out_err func 16789 ns 
+29083 ns 
+4944189 ns 
+16292969 ns 
+backward end: 
+weight update startfirst layer 901760 ns 
+46973139 ns 
+3871628 ns 
+33857 ns 
+weight update end: 
+62424 ns 
+50299412 ns 
+21337828 ns 
+51859504 ns 
+
+forward start: 
+****** 
+72983 ns 
+32156 ns 
+369613 ns 
+332986 ns 
+89753 ns 
+****** 
+938299 ns 
+****** 
+595886 ns 
+34074 ns 
+12906617 ns 
+317970 ns 
+91426 ns 
+****** 
+13977132 ns 
+****** 
+35505369 ns 
+25608 ns 
+****** 
+35572401 ns 
+60758 ns 
+label update 24362 ns 
+forward end: 
+backward start: 
+out_err func 19778 ns 
+35561 ns 
+4961645 ns 
+16279199 ns 
+backward end: 
+weight update start 
+first layer 928467 ns 
+50381926 ns 
+4271415 ns 
+39535 ns 
+weight update end: 
+50033 ns 
+50648691 ns 
+21374480 ns 
+55699272 ns
+
+forward start: 
+****** 
+71560 ns 
+174680 ns 
+370748 ns 
+339893 ns 
+92577 ns 
+****** 
+1186336 ns 
+****** 
+602733 ns 
+40760 ns 
+12900249 ns 
+326270 ns 
+92043 ns 
+****** 
+14018607 ns 
+8 13 180
+6 10 10
+****** 
+6591013 ns 
+22309 ns 
+****** 
+6652107 ns 
+56810 ns 
+label update 20407 ns 
+forward end: 
+backward start: 
+out_err func 16920 ns 
+28524 ns 
+4938799 ns 
+16299967 ns 
+backward end: 
+weight update start 
+first layer 904117 ns 
+50383591 ns 
+4268148 ns 
+31714 ns 
+weight update end: 
+114161 ns 
+22099029 ns 
+21328883 ns 
+55642153 ns 
+cudaSuccess

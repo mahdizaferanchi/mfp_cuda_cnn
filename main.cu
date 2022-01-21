@@ -371,10 +371,10 @@ public:
   }
   __device__ __forceinline__ float* at(int row, int col, int page=0, int block=0)
   {
-    if (row < 0 || row >= height || col < 0 || col >= width)
-    {
-      return zero;
-    }
+    // if (row < 0 || row >= height || col < 0 || col >= width)
+    // {
+    //   return zero;
+    // }
     return (float*)((char*)d_copy + (block * height * depth + page * height + row) * pitch) + col;
   }
 
@@ -456,10 +456,11 @@ __global__ void convmulfc(Tensor acts, Tensor weights, Tensor out)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
-  if (i < acts.fourth && j < weights.width)
+  int k = blockIdx.z * blockDim.z + threadIdx.z;
+  if (i < acts.fourth && j < weights.width && k < acts.height * acts.depth)
   {
     float result = 0.0f;
-    for (int loopIdx = 0; loopIdx < acts.width * acts.height * acts.depth; ++loopIdx)
+    for (int loopIdx = k * acts.width; loopIdx < (k + 1) * acts.width; ++loopIdx)
     {
       result += *acts.where(loopIdx, i) * (*weights.at(loopIdx, j));
       // result += *weights.at(loopIdx, j);
@@ -570,7 +571,7 @@ __global__ void map_transform(Tensor in, Tensor t_mat, Tensor out)
       for (int loopIdx = 0; loopIdx < 4; ++loopIdx)
       {
         // result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
-        result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx - 1, xIdx + hIdx - 1, k % in.depth, k / in.depth));
+        result += (*t_mat.at(vIdx, loopIdx)) * (*in.at(yIdx + loopIdx, xIdx + hIdx, k % in.depth, k / in.depth));
       }
       intermediate[vIdx][hIdx] = result;
     }
@@ -867,7 +868,7 @@ __global__ void wts_ll_acts_mul_errs(Tensor map, Tensor filter, Tensor out)
   int batchIdx = (k / filter.depth) % map.fourth;
   int filterIdx = k % (filter.depth);
 
-  if (i < map.height && j < map.width && k < map.fourth * filter.depth * map.depth)
+  if (xIdx < map.height && yIdx < map.width && k < map.fourth * filter.depth * map.depth)
   {
     for (int vIdx = 0; vIdx < 4; ++vIdx)
     {
@@ -1163,6 +1164,11 @@ dim3 get_grids_2(size_t x_dim, size_t y_dim, size_t z_dim=1)
   return dim3((x_dim > 40) ? x_dim / 20 + 1 : 4, (y_dim > 40) ? y_dim / 20 + 1 : 4, (z_dim > 40) ? z_dim / 20 + 1 : 2);
 }
 
+dim3 get_grids_3(size_t x_dim, size_t y_dim, size_t z_dim=1)
+{
+  return dim3((x_dim > 40) ? x_dim / 10 + 1 : 8, (y_dim > 40) ? y_dim / 10 + 1 : 8, (z_dim > 40) ? z_dim / 10 + 1 : 8);
+}
+
 
 dim3 get_threads(size_t x_dim, size_t y_dim, size_t z_dim=1)
 {
@@ -1178,6 +1184,14 @@ dim3 get_threads_2(size_t x_dim, size_t y_dim, size_t z_dim=1)
     x_dim / ((x_dim > 40) ? x_dim / 20 + 1 : 4) + 1, 
     y_dim / ((y_dim > 40) ? y_dim / 20 + 1 : 4) + 1,
     z_dim / ((z_dim > 40) ? z_dim / 20 + 1 : 2) + 1);
+}
+
+dim3 get_threads_3(size_t x_dim, size_t y_dim, size_t z_dim=1)
+{
+  return dim3(
+    x_dim / ((x_dim > 40) ? x_dim / 10 + 1 : 8) + 1, 
+    y_dim / ((y_dim > 40) ? y_dim / 10 + 1 : 8) + 1,
+    z_dim / ((z_dim > 40) ? z_dim / 10 + 1 : 8) + 1);
 }
 
 class Layer
@@ -1312,12 +1326,20 @@ public:
   {}
   void forward(Tensor& input, cudaStream_t s)
   {
+    dim3 temp1 = get_grids_3(input.fourth, units, input.height * input.depth);
+    dim3 temp2 = get_threads_3(input.fourth, units, input.height * input.depth);
+    std::cout << temp1.x << ' ' << temp1.y << ' ' << temp1.z << '\n';
+    std::cout << temp2.x << ' ' << temp2.y << ' ' << temp2.z << '\n';
+    std::cout << "****** \n";
+    auto t0 = std::chrono::high_resolution_clock::now();
     convmulfc<<<
-      get_grids(input.fourth, units),
-      get_threads(input.fourth, units),
+      get_grids_3(input.fourth, units, input.height * input.depth),
+      get_threads_3(input.fourth, units, input.height * input.depth),
       0, 
    		s
     >>>(input, weights, pre_activations);
+    cudaDeviceSynchronize();
+    auto t1 = std::chrono::high_resolution_clock::now();
     // simple_bias<<<
     //   get_grids(activations.height, activations.width),
     //   get_threads(activations.height, activations.width),
@@ -1330,6 +1352,13 @@ public:
       0, 
    		s
     >>>(pre_activations, activations);
+    cudaDeviceSynchronize();
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::chrono::nanoseconds move_time = t1 - t0;
+    std::chrono::nanoseconds forward_time = t2 - t1;
+    std::cout << move_time.count() << " ns \n";
+    std::cout << forward_time.count() << " ns \n";
+    std::cout << "****** \n";
   }
 
   void update_weights(std::vector<std::reference_wrapper<Layer>>::iterator ll_iterator, float learning_rate, cudaStream_t stream, bool use_alt=false)
@@ -1416,15 +1445,17 @@ public:
   }
   void forward(Tensor& input, cudaStream_t s)
   {
-
+    std::cout << "****** \n";
+    auto t0 = std::chrono::high_resolution_clock::now();
     map_transform<<<
       dim3(1, 1, input.depth * input.fourth),
-      dim3(input.height / 2, input.width / 2),
+      dim3(input.height / 2 - 1, input.width / 2 - 1),
       0,
       s
     >>>(input, B_matrix, transformed_input);
 
-    // cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
+    auto t1 = std::chrono::high_resolution_clock::now();
 
     filter_transform<<<
       dim3(1, 1, transformed_weights.fourth), 
@@ -1433,7 +1464,8 @@ public:
       0,
       s
     >>>(weights, G_matrix, transformed_weights);
-    // cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
+    auto t2 = std::chrono::high_resolution_clock::now();
 
     wts_input_mul_filter<<<
       dim3(1, 1, transformed_input.fourth * transformed_weights.fourth),
@@ -1442,7 +1474,8 @@ public:
       s
     >>>(transformed_input, transformed_weights, forward_inter);
     // wts = winograd transform space
-    // cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
+    auto t3 = std::chrono::high_resolution_clock::now();
 
     inverse_transform_with_bias<<<
       dim3(1, 1, forward_inter.depth * forward_inter.fourth),
@@ -1450,7 +1483,8 @@ public:
       0,
       s
     >>>(forward_inter, A_matrix, biases, pre_activations);
-    // cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
+    auto t4 = std::chrono::high_resolution_clock::now();
 
     conv_relu_kernel<<<
       dim3(1, 1, pre_activations.depth * pre_activations.fourth),
@@ -1459,7 +1493,19 @@ public:
       s
     >>>(pre_activations, activations);
 
-    // cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
+    auto t5 = std::chrono::high_resolution_clock::now();
+    std::chrono::nanoseconds move_time = t1 - t0;
+    std::chrono::nanoseconds forward_time = t2 - t1;
+    std::chrono::nanoseconds back_time = t3 - t2;
+    std::chrono::nanoseconds update_time = t4 - t3;
+    std::chrono::nanoseconds fifth_time = t5 - t4;
+    std::cout << move_time.count() << " ns \n";
+    std::cout << forward_time.count() << " ns \n";
+    std::cout << back_time.count() << " ns \n";
+    std::cout << update_time.count() << " ns \n";
+    std::cout << fifth_time.count() << " ns \n";
+    std::cout << "****** \n";
   }
 
   void backward_conv(Tensor& nlw, Tensor& nle, cudaStream_t s)
@@ -1479,7 +1525,7 @@ public:
 
     map_transform<<<
       dim3(1, 1, nle.depth * nle.fourth),
-      dim3(nle.height / 2, nle.width / 2),
+      dim3(nle.height / 2 - 1, nle.width / 2 - 1),
       0,
       s
     >>>(nle, B_matrix, transfromed_nle);
@@ -1567,7 +1613,7 @@ public:
     Tensor& ll_acts = use_alt ? ll_iterator->get().activations_alt : ll_iterator->get().activations;
     map_transform<<<
       dim3(1, 1, ll_acts.depth * ll_acts.fourth),
-      dim3(ll_acts.height / 2, ll_acts.width / 2),
+      dim3(ll_acts.height / 2 - 1, ll_acts.width / 2 - 1),
       0,
       s
     >>>(ll_acts, B2_matrix, ll_transformed_acts);
@@ -1804,18 +1850,32 @@ public:
   void forward_pass(size_t batch_size, bool use_alt)
   {
     Tensor temp_results = (use_alt ? layers.front().get().activations_alt : layers.front().get().activations);
+    std::cout << "forward start: \n";
     for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 1; l != layers.end(); ++l)
     {
+      auto t0 = std::chrono::high_resolution_clock::now();
       l->get().forward(temp_results, kernel_exec_s);
+      cudaDeviceSynchronize();
       temp_results = l->get().activations;
+      auto t1 = std::chrono::high_resolution_clock::now();
+      std::chrono::nanoseconds layer_time = t1 - t0;
+      std::cout << layer_time.count() << " ns \n";
     }
+    auto t0 = std::chrono::high_resolution_clock::now();
     update_correct_labels<<<1, batch_size, 0, kernel_exec_s>>>(
       layers.back().get().activations, 
       (use_alt ? d_correct_labels_alt : d_correct_labels), 
       d_correct_predictions);
+    cudaDeviceSynchronize();
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::chrono::nanoseconds layer_time = t1 - t0;
+    std::cout << "label update " << layer_time.count() << " ns \n";
+    std::cout << "forward end: \n";
   }
   void backprop(size_t batch_size, bool use_alt)
   {
+    std::cout << "backward start: \n";
+    auto t0 = std::chrono::high_resolution_clock::now();
     out_err_func<<<
 	    get_grids(batch_size, layers.back().get().get_output_size()), 
 	    get_threads(batch_size, layers.back().get().get_output_size()), 
@@ -1826,10 +1886,20 @@ public:
 	    layers.back().get().errors, 
 	    (use_alt ? d_correct_labels_alt : d_correct_labels)
 	  );
+    cudaDeviceSynchronize();
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::chrono::nanoseconds layer_time = t1 - t0;
+    std::cout << "out_err func " << layer_time.count() << " ns \n";
     for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.end() - 2; l != layers.begin(); --l)
     {
+      auto t0 = std::chrono::high_resolution_clock::now();
       l->get().backward((l + 1)->get().weights, (l + 1)->get().errors, kernel_exec_s);
+      cudaDeviceSynchronize();
+      auto t1 = std::chrono::high_resolution_clock::now();
+      std::chrono::nanoseconds layer_time = t1 - t0;
+      std::cout << layer_time.count() << " ns \n";
     }
+    std::cout << "backward end: \n";
   }
   void weight_update(bool use_alt)
   {
@@ -1840,8 +1910,14 @@ public:
     //   0, 
     //   kernel_exec_s
     // >>>(layers[1].get().errors, input_activations, layers[1].get().weights, learning_rate);
+    std::cout << "weight update start \n";
+    auto t0 = std::chrono::high_resolution_clock::now();
     std::vector<std::reference_wrapper<Layer>>::iterator first_layer = layers.begin();
     layers[1].get().update_weights(first_layer, learning_rate, kernel_exec_s, use_alt);
+    cudaDeviceSynchronize();
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::chrono::nanoseconds layer_time = t1 - t0;
+    std::cout << "first layer " << layer_time.count() << " ns \n";
 
     for (std::vector<std::reference_wrapper<Layer>>::iterator l = layers.begin() + 2; l != layers.end(); ++l)
     {
@@ -1851,8 +1927,14 @@ public:
       //   0, 
       //   kernel_exec_s
       // >>>(l->get().errors, (l - 1)->get().activations, l->get().weights, learning_rate); 
+      auto t0 = std::chrono::high_resolution_clock::now();
       l->get().update_weights(l - 1, learning_rate, kernel_exec_s);
+      cudaDeviceSynchronize();
+      auto t1 = std::chrono::high_resolution_clock::now();
+      std::chrono::nanoseconds layer_time = t1 - t0;
+      std::cout << layer_time.count() << " ns \n";
     }
+    std::cout << "weight update end: \n";
   }
   void single_train_timed(float* image, int* label, size_t batch_size)
   {
@@ -2091,8 +2173,8 @@ int main()
   //   mnist_model.single_train(train_images[loopIdx], train_labels[loopIdx], mini_batch_size);
   // }
 
-  // cudaDeviceSynchronize();
-  // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
+  cudaDeviceSynchronize();
+  std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
   // mnist_model.move_batch(train_images[0], train_labels[0], mini_batch_size, false);
   // cudaDeviceSynchronize();
   // std::cout << cudaGetErrorName(cudaPeekAtLastError()) << '\n';
